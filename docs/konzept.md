@@ -6,6 +6,10 @@ MQTT-Broker, mit optionaler Home-Assistant-Auto-Discovery. Zwillingsprojekt zu
 und [`go-mtec2mqtt`](https://github.com/SukramJ/go-mtec2mqtt) (Local-Blueprint);
 es übernimmt deren Projekt-Setup.
 
+**Stand:** M0–M4 umgesetzt und gegen ein echtes SolarFlow 2400 AC verifiziert —
+lokaler + Cloud-Transport, HA-Discovery (Sub-Devices + i18n), virtuelle Switches,
+Re-Read nach Write, Diagnose-Web-UI, mDNS-Browser und HA-Add-on.
+
 ## 1. Kernidee
 
 Lokal und Cloud nutzen **dasselbe Property-Datenmodell** (`electricLevel`,
@@ -13,7 +17,7 @@ Lokal und Cloud nutzen **dasselbe Property-Datenmodell** (`electricLevel`,
 `packData[]` …) und nahezu identische Payloads (`{"properties": {…},
 "packData": […]}`). Sie unterscheiden sich nur im **Transport**:
 
-| | Lokal (Phase 1) | Cloud (Phase 2) |
+| | Lokal | Cloud |
 |---|---|---|
 | Transport | HTTP request/response | MQTT pub/sub (TLS) |
 | Telemetrie | `GET /properties/report` (Poll) | subscribe `iot/{prodKey}/{deviceId}/properties/report` |
