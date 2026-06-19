@@ -27,6 +27,13 @@ go.work.sum
 # env file
 .env
 
+# Local runtime config (root only) — holds broker credentials, must not be committed.
+/config.yaml
+
+# Build output
+/bin/
+/dist/
+
 # Editor/IDE
-# .idea/
+.idea/
 # .vscode/

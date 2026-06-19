@@ -1,0 +1,52 @@
+# go-zendure2mqtt configuration template.
+#
+# Every scalar key below can also be set via environment variable using the
+# ZENDURE_ prefix, e.g. MQTT_SERVER -> ZENDURE_MQTT_SERVER. Environment
+# values override the file. Booleans accept true/false. (LOCAL_DEVICES is a
+# list and is configured here in the file, not via env.)
+
+# --- Transport selection ---
+# local = poll devices on the LAN over HTTP (zenSDK); cloud = Zendure cloud
+# login + cloud MQTT stream.
+CONNECTION: local
+
+# --- Local transport ---
+REFRESH: 15          # local HTTP poll interval in seconds
+LOCAL_DEVICES:
+  - SN: SF2400XXXXXXXX     # device serial number
+    HOST: 192.168.1.50     # device IP or mDNS hostname
+    MODEL: solarflow 2400 ac
+
+# --- Cloud transport (only used when CONNECTION: cloud) ---
+# Base64 "app token" obtained from the Zendure app. Decodes to
+# "<api_url>.<appKey>". Leave empty for local-only operation.
+CLOUD_APP_TOKEN: ""
+# The Zendure cloud broker presents a non-standard TLS certificate; keep this
+# false (connection stays TLS-encrypted). Set true only to enforce strict
+# certificate verification.
+CLOUD_TLS_VERIFY: false
+
+# --- MQTT (the broker the bridge publishes to) ---
+MQTT_SERVER: localhost
+MQTT_PORT: 1883
+MQTT_LOGIN: ""
+MQTT_PASSWORD: ""
+MQTT_TOPIC: zendure2mqtt
+
+# --- Home Assistant ---
+HASS_ENABLE: true
+HASS_BASE_TOPIC: homeassistant
+
+# --- Virtual charge/discharge switches (AC power limit in W written when ON) ---
+CHARGE_ACTIVE_VALUE: 1200
+DISCHARGE_ACTIVE_VALUE: 1200
+
+# --- Diagnostic web UI (optional; milestone M2) ---
+WEB_ENABLE: false
+WEB_BIND: "127.0.0.1:8080"
+WEB_USER: ""
+WEB_PASSWORD: ""
+
+# --- Misc ---
+LANGUAGE: en   # en | de
+DEBUG: false
