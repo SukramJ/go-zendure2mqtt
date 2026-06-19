@@ -1,0 +1,292 @@
+# go-zendure2mqtt property catalog.
+#
+# Maps raw Zendure device properties (camelCase, as delivered by the local
+# /properties/report or the cloud telemetry) to MQTT topics and Home
+# Assistant entities. Tuned for the SolarFlow 2400 AC; extend freely.
+#
+# Per entry:
+#   property      raw key in the device report (required)
+#   topic         MQTT topic leaf (snake_case; defaults to property)
+#   group         topic bucket: now | config | static | battery
+#   platform      HA platform: sensor | binary_sensor | number | select | switch
+#   device_class  HA device class
+#   unit          unit of measurement
+#   offset/scale  value = (raw - offset) / scale   (e.g. 0.1K→°C: offset 2731, scale 10)
+#   writable      true → property is settable (HA gets a command topic)
+#   min/max/step  bounds for writable number entities
+#   value_map     raw code → label (select entities; reversed on write)
+#   name/name_de  friendly names
+
+entries:
+  # --- live power & state (group: now) ---
+  - property: electricLevel
+    topic: electric_level
+    group: now
+    platform: sensor
+    device_class: battery
+    unit: "%"
+    name: Battery level
+    name_de: Batterieladung
+
+  - property: solarInputPower
+    topic: solar_input_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Solar input power
+    name_de: Solar-Eingangsleistung
+
+  - property: packInputPower
+    topic: pack_input_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Battery discharge power
+    name_de: Batterie-Entladeleistung
+
+  - property: outputPackPower
+    topic: output_pack_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Battery charge power
+    name_de: Batterie-Ladeleistung
+
+  - property: gridInputPower
+    topic: grid_input_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Grid input power
+    name_de: Netz-Eingangsleistung
+
+  - property: outputHomePower
+    topic: output_home_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Home output power
+    name_de: Hausausgangsleistung
+
+  - property: gridOffPower
+    topic: grid_off_power
+    group: now
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Off-grid output power
+    name_de: Inselbetrieb-Ausgangsleistung
+
+  - property: remainOutTime
+    topic: remain_out_time
+    group: now
+    platform: sensor
+    device_class: duration
+    unit: min
+    name: Remaining discharge time
+    name_de: Restentladezeit
+
+  - property: hyperTmp
+    topic: temperature
+    group: now
+    platform: sensor
+    device_class: temperature
+    unit: "°C"
+    offset: 2731
+    scale: 10
+    name: Enclosure temperature
+    name_de: Gehäusetemperatur
+
+  - property: rssi
+    topic: rssi
+    group: static
+    platform: sensor
+    device_class: signal_strength
+    unit: dBm
+    name: Wi-Fi signal
+    name_de: WLAN-Signal
+
+  - property: BatVolt
+    topic: battery_voltage
+    group: now
+    platform: sensor
+    device_class: voltage
+    unit: V
+    scale: 100         # 0.01 V (5039 = 50.39 V)
+    name: Battery voltage
+    name_de: Batteriespannung
+
+  - property: chargeMaxLimit
+    topic: charge_max_limit
+    group: static
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Max charge power
+    name_de: Max. Ladeleistung
+
+  - property: packNum
+    topic: pack_count
+    group: static
+    platform: sensor
+    name: Battery pack count
+    name_de: Anzahl Batteriepacks
+
+  # --- writable settings (group: config) ---
+  - property: acMode
+    topic: ac_mode
+    group: config
+    platform: select
+    writable: true
+    value_map:
+      "1": charge
+      "2": discharge
+    value_map_de:
+      "1": Laden
+      "2": Entladen
+    name: AC mode
+    name_de: AC-Modus
+
+  - property: inputLimit
+    topic: input_limit
+    group: config
+    platform: number
+    unit: W
+    writable: true
+    min: 0
+    max: 2400
+    step: 100
+    name: Charge limit
+    name_de: Ladegrenze
+
+  - property: outputLimit
+    topic: output_limit
+    group: config
+    platform: number
+    unit: W
+    writable: true
+    min: 0
+    max: 2400
+    step: 100
+    name: Discharge limit
+    name_de: Entladegrenze
+
+  - property: socSet
+    topic: soc_set
+    group: config
+    platform: number
+    unit: "%"
+    scale: 10          # device reports deci-percent (950 = 95 %)
+    writable: true
+    min: 70
+    max: 100
+    step: 1
+    name: Charge limit SoC
+    name_de: Lade-SoC-Grenze
+
+  - property: minSoc
+    topic: min_soc
+    group: config
+    platform: number
+    unit: "%"
+    scale: 10          # device reports deci-percent (150 = 15 %)
+    writable: true
+    min: 0
+    max: 50
+    step: 1
+    name: Discharge limit SoC
+    name_de: Entlade-SoC-Grenze
+
+  - property: inverseMaxPower
+    topic: inverse_max_power
+    group: config
+    platform: number
+    unit: W
+    writable: true
+    min: 0
+    max: 2400
+    step: 100
+    name: Max inverter power
+    name_de: Max. Wechselrichterleistung
+
+  - property: smartMode
+    topic: smart_mode
+    group: config
+    platform: select
+    writable: true
+    value_map:
+      "0": persist
+      "1": volatile
+    value_map_de:
+      "0": dauerhaft
+      "1": flüchtig
+    name: Smart mode
+    name_de: Smart-Modus
+
+  # --- battery pack values (group: battery; expanded per packData[].sn) ---
+  - property: socLevel
+    topic: soc_level
+    platform: sensor
+    device_class: battery
+    unit: "%"
+    name: Pack SoC
+    name_de: Pack-Ladezustand
+
+  - property: power
+    topic: power
+    platform: sensor
+    device_class: power
+    unit: W
+    name: Pack power
+    name_de: Pack-Leistung
+
+  - property: maxTemp
+    topic: max_temp
+    platform: sensor
+    device_class: temperature
+    unit: "°C"
+    offset: 2731
+    scale: 10
+    name: Pack max temperature
+    name_de: Pack-Maximaltemperatur
+
+  - property: totalVol
+    topic: total_voltage
+    platform: sensor
+    device_class: voltage
+    unit: V
+    scale: 100
+    name: Pack voltage
+    name_de: Pack-Spannung
+
+  - property: maxVol
+    topic: max_cell_voltage
+    platform: sensor
+    device_class: voltage
+    unit: V
+    scale: 100
+    name: Max cell voltage
+    name_de: Max. Zellspannung
+
+  - property: minVol
+    topic: min_cell_voltage
+    platform: sensor
+    device_class: voltage
+    unit: V
+    scale: 100
+    name: Min cell voltage
+    name_de: Min. Zellspannung
+
+  - property: batcur
+    topic: current
+    platform: sensor
+    device_class: current
+    unit: A
+    scale: 10          # signed deci-ampere (208 = 20.8 A)
+    name: Pack current
+    name_de: Pack-Strom

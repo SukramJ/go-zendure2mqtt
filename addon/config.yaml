@@ -1,0 +1,85 @@
+# Home Assistant add-on manifest for go-zendure2mqtt.
+#
+# version MUST equal the published image tag (ghcr.io/sukramj/go-zendure2mqtt-addon-{arch})
+# and is bumped in the release commit that cuts the matching git tag.
+name: go-zendure2mqtt
+version: "0.1.0"
+slug: go-zendure2mqtt
+description: >-
+  Bridges Zendure devices (e.g. SolarFlow 2400 AC) to MQTT with Home Assistant
+  MQTT discovery and a read-only diagnostic web UI. Local (zenSDK HTTP) or
+  Zendure cloud transport.
+url: https://github.com/SukramJ/go-zendure2mqtt
+arch:
+  - amd64
+  - aarch64
+  - armv7
+
+# Per-arch add-on image (HA base + bashio + run.sh) published by
+# .github/workflows/addon-image.yml. The Supervisor substitutes {arch} and
+# pulls <image>:<version>. This is distinct from the distroless daemon image
+# (ghcr.io/sukramj/go-zendure2mqtt), which runs the binary directly and is NOT
+# a valid add-on image (no run.sh to apply options). Remove this key to build
+# addon/Dockerfile locally instead.
+image: "ghcr.io/sukramj/go-zendure2mqtt-addon-{arch}"
+
+# The HA base image ships s6-overlay as its init; don't let the Supervisor
+# inject its own init on top.
+init: false
+
+# Read-only diagnostic web UI surfaced as an HA panel via Ingress — no port
+# needs to be exposed.
+ingress: true
+ingress_port: 8080
+panel_icon: mdi:solar-power
+panel_title: go-zendure2mqtt
+
+# Optional host-port exposure (disabled by default — `null` publishes no port,
+# Ingress stays the primary path).
+ports:
+  8080/tcp: null
+ports_description:
+  8080/tcp: "Diagnostic web UI (normally reached via Ingress)"
+
+# Soft dependency: use the Supervisor's MQTT broker (core-mosquitto) when present.
+services:
+  - mqtt:want
+
+options:
+  connection: local
+  refresh: 15
+  local_devices: []
+  cloud_app_token: ""
+  cloud_tls_verify: false
+  mqtt_server: ""
+  mqtt_port: 1883
+  mqtt_login: ""
+  mqtt_password: ""
+  mqtt_topic: zendure2mqtt
+  hass_enable: true
+  language: en
+  web_enable: true
+  charge_active_value: 1200
+  discharge_active_value: 1200
+  debug: false
+
+schema:
+  connection: "list(local|cloud)"
+  refresh: int(5,86400)
+  local_devices:
+    - sn: str
+      host: str
+      model: "str?"
+  cloud_app_token: "password?"
+  cloud_tls_verify: bool
+  mqtt_server: "str?"
+  mqtt_port: int(1,65535)
+  mqtt_login: "str?"
+  mqtt_password: "password?"
+  mqtt_topic: str
+  hass_enable: bool
+  language: "list(en|de)"
+  web_enable: bool
+  charge_active_value: int(0,2400)
+  discharge_active_value: int(0,2400)
+  debug: bool
