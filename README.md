@@ -89,6 +89,23 @@ make check            # vet + fmt-check + lint + test (needs dev tools, see `mak
 
 See [docs/konzept.md](docs/konzept.md) for the architecture and design notes.
 
+## Acknowledgements
+
+This project is primarily based on the official
+[**Zendure zenSDK**](https://github.com/Zendure/zenSDK) — Zendure's own
+documentation of the local device control protocol (`properties/report` /
+`properties/write` and the device API used by the local backend).
+
+The [`Zendure/zendure-ha`](https://github.com/Zendure/zendure-ha) Home Assistant
+integration by **peteS-UK** (MIT licensed) was additionally used as a supporting
+reference, mainly for the cloud-side details — the signed `deviceList` login
+(`HAKEY`, the `SHA1` signature scheme) and the `zenHa` client id. Many thanks to
+peteS-UK and the contributors of that project.
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). This project follows the official Zendure
+[zenSDK](https://github.com/Zendure/zenSDK) protocol and additionally used
+[`Zendure/zendure-ha`](https://github.com/Zendure/zendure-ha) (MIT, Copyright (c)
+2024 peteS-UK) as a supporting reference; see [LICENSE](LICENSE) for the upstream
+attribution.
