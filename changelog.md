@@ -1,3 +1,16 @@
+# Version 0.1.2 (2026-06-27)
+
+## What's Changed
+
+Maintenance release. Internal code-quality cleanup only — no functional or
+user-facing changes.
+
+### Changed
+
+- Resolved all 20 `golangci-lint` findings (`httpNoBody`, `rangeValCopy`,
+  `unnamedResult`, revive naming, `contextcheck`, gosec G115, `makezero`,
+  staticcheck) so `make check` passes the full linter gate. No behavior change.
+
 # Version 0.1.1 (2026-06-27)
 
 ## What's Changed
