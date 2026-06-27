@@ -1,3 +1,28 @@
+# Version 0.1.1 (2026-06-27)
+
+## What's Changed
+
+Maintenance release. No functional changes to the daemon; adds the Home Assistant
+add-on icon and tightens the CI supply chain.
+
+### Added
+
+- Home Assistant add-on icon (`addon/icon.png`) — the Zendure brand logo, sourced
+  from the `home-assistant/brands` repository. Attributed in the README as a
+  Zendure trademark, not covered by this project's MIT license.
+
+### Changed
+
+- CI supply-chain hardening, Dependabot auto-merge (patch/minor) with a 7-day
+  cooldown, and dependency bumps (`actions/setup-go`, `dependabot/fetch-metadata`).
+- Documentation updates and upstream attribution for the Zendure zenSDK and the
+  `Zendure/zendure-ha` integration.
+
+### Dependencies
+
+- Go modules already at their latest releases (`golang.org/x/sync` v0.21.0,
+  `gopkg.in/yaml.v3` v3.0.1) — no changes required.
+
 # Version 0.1.0 (2026-06-19)
 
 ## What's Changed

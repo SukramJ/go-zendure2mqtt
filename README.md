@@ -102,6 +102,12 @@ reference, mainly for the cloud-side details — the signed `deviceList` login
 (`HAKEY`, the `SHA1` signature scheme) and the `zenHa` client id. Many thanks to
 peteS-UK and the contributors of that project.
 
+The Home Assistant add-on icon (`addon/icon.png`) is the Zendure brand logo,
+taken from the [`home-assistant/brands`](https://github.com/home-assistant/brands)
+repository (`custom_integrations/zendure_ha/icon.png`). It is a Zendure trademark
+and remains the property of Zendure; it is used here only to identify the
+supported hardware and is not covered by this project's MIT license.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). This project follows the official Zendure

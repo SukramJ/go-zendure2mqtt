@@ -64,6 +64,9 @@ printf '%s\n' "$body"
 
 if [ -n "$prev_version" ]; then
 	repo="${GITHUB_REPOSITORY:-SukramJ/go-zendure2mqtt}"
-	printf '\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+	# Release tags follow the vX.Y.Z convention, but changelog headers and
+	# the VERSION argument are bare (X.Y.Z). Prefix both sides so the compare
+	# link points at real tags instead of non-existent bare refs.
+	printf '\n**Full Changelog**: https://github.com/%s/compare/v%s...v%s\n' \
 		"$repo" "$prev_version" "$VERSION"
 fi
