@@ -22,8 +22,8 @@ func Load(r io.Reader) (*Catalog, error) {
 	if err := yaml.NewDecoder(r).Decode(&f); err != nil {
 		return nil, fmt.Errorf("catalog: parse yaml: %w", err)
 	}
-	for i, e := range f.Entries {
-		if e.Property == "" {
+	for i := range f.Entries {
+		if f.Entries[i].Property == "" {
 			return nil, fmt.Errorf("catalog: entry %d has no 'property'", i)
 		}
 	}

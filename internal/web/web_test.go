@@ -30,7 +30,7 @@ func do(s *web.Server, req *http.Request) *httptest.ResponseRecorder {
 }
 
 func TestHealthEndpoint(t *testing.T) {
-	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/api/health", nil))
+	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
@@ -47,14 +47,14 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestSnapshotEndpoint(t *testing.T) {
-	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/api/snapshot", nil))
+	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/api/snapshot", http.NoBody))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 }
 
 func TestIndexServed(t *testing.T) {
-	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/", nil))
+	rr := do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
@@ -66,17 +66,17 @@ func TestIndexServed(t *testing.T) {
 func TestBasicAuth(t *testing.T) {
 	s := newServer("admin", "secret")
 
-	if rr := do(s, httptest.NewRequest(http.MethodGet, "/api/health", nil)); rr.Code != http.StatusUnauthorized {
+	if rr := do(s, httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody)); rr.Code != http.StatusUnauthorized {
 		t.Errorf("no creds: status = %d, want 401", rr.Code)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody)
 	req.SetBasicAuth("admin", "secret")
 	if rr := do(s, req); rr.Code != http.StatusOK {
 		t.Errorf("valid creds: status = %d, want 200", rr.Code)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody)
 	req.SetBasicAuth("admin", "wrong")
 	if rr := do(s, req); rr.Code != http.StatusUnauthorized {
 		t.Errorf("wrong creds: status = %d, want 401", rr.Code)

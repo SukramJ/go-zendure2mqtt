@@ -149,9 +149,10 @@ func newCatalog(entries []Entry) *Catalog {
 		byProp:  make(map[string]Entry, len(entries)),
 		byTopic: make(map[string]Entry, len(entries)),
 	}
-	for _, e := range entries {
-		c.byProp[e.Property] = e
-		c.byTopic[e.TopicLeaf()] = e
+	for i := range entries {
+		e := &entries[i]
+		c.byProp[e.Property] = *e
+		c.byTopic[e.TopicLeaf()] = *e
 	}
 	return c
 }
