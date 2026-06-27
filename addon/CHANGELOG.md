@@ -5,6 +5,11 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.1.2
+
+- Internal code-quality cleanup only (linter findings). No functional changes to
+  the add-on.
+
 ## 0.1.1
 
 - Add an add-on icon (the Zendure brand logo, sourced from `home-assistant/brands`)
