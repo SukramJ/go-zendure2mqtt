@@ -45,14 +45,24 @@ func New(base, root, lang string, pub mqtt.Publisher, logger *slog.Logger) *Disc
 	return &Discovery{base: base, root: root, lang: lang, pub: pub, logger: logger, sent: map[string]bool{}}
 }
 
-// Publish emits discovery configs for every catalogued, HA-eligible point.
-// Points without a catalog entry or platform are skipped.
-func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *model.Report, points []process.Point) {
+// Publish emits discovery configs for every catalogued, HA-eligible point and
+// returns the set of config topics that make up the device's current entity set
+// — whether freshly published this call or already sent earlier in the process
+// lifetime. The caller reconciles this set against the broker's retained
+// configs to clear orphans (see the coordinator's reconcileOrphans). Points
+// without a catalog entry or platform are skipped.
+func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *model.Report, points []process.Point) (published map[string]bool) {
+	published = make(map[string]bool, len(points))
 	for _, p := range points {
 		if p.Entry == nil || p.Entry.Platform == "" {
 			continue
 		}
 		uniqueID := d.uniqueID(dev.SN, p)
+		// The config topic belongs to the device's current set whether or not we
+		// (re)send it below, so record it before the already-sent guard: a
+		// steady-state publish (everything already sent) must still report the
+		// full set so reconciliation does not treat live entities as orphans.
+		published[d.configTopic(p.Entry.Platform, uniqueID)] = true
 		d.mu.Lock()
 		already := d.sent[uniqueID]
 		d.mu.Unlock()
@@ -72,6 +82,7 @@ func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *mode
 		d.sent[uniqueID] = true
 		d.mu.Unlock()
 	}
+	return published
 }
 
 // uniqueID derives a stable, broker-wide-unique entity id.
@@ -137,8 +148,13 @@ func (d *Discovery) config(dev source.Device, report *model.Report, p process.Po
 	if err != nil {
 		return "", nil, fmt.Errorf("hass: marshal config: %w", err)
 	}
-	topic = fmt.Sprintf("%s/%s/%s/config", d.base, e.Platform, uniqueID)
-	return topic, payload, nil
+	return d.configTopic(e.Platform, uniqueID), payload, nil
+}
+
+// configTopic is the retained HA discovery config topic for an entity:
+// <base>/<platform>/<uniqueID>/config.
+func (d *Discovery) configTopic(platform, uniqueID string) string {
+	return fmt.Sprintf("%s/%s/%s/config", d.base, platform, uniqueID)
 }
 
 // deviceBlock is the HA "device" registry block for a point. The main unit

@@ -12,8 +12,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
@@ -47,6 +49,10 @@ type Coordinator struct {
 	runCtx   context.Context //nolint:containedctx // captured for the subscription handler
 	bySN     map[string]source.Device
 	switches []virtual.Switch
+
+	discMu      sync.Mutex        // guards lastDiscSig
+	lastDiscSig map[string]string // sn -> signature of the last published config-topic set
+	reconciling sync.Map          // sn -> struct{}; in-flight orphan-reconcile gate, one per device
 }
 
 // New constructs a Coordinator.
@@ -60,11 +66,12 @@ func New(deps Deps) *Coordinator {
 		bySN[d.SN] = d
 	}
 	return &Coordinator{
-		deps:     deps,
-		root:     deps.Cfg.MQTTTopic,
-		logger:   logger,
-		bySN:     bySN,
-		switches: virtual.Switches(deps.Cfg.ChargeActiveValue, deps.Cfg.DischargeActiveValue),
+		deps:        deps,
+		root:        deps.Cfg.MQTTTopic,
+		logger:      logger,
+		bySN:        bySN,
+		switches:    virtual.Switches(deps.Cfg.ChargeActiveValue, deps.Cfg.DischargeActiveValue),
+		lastDiscSig: map[string]string{},
 	}
 }
 
@@ -119,7 +126,11 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		c.deps.State.Update(dev, report, points, c.deps.Cfg.Language)
 	}
 	if c.deps.HASS != nil {
-		c.deps.HASS.Publish(ctx, dev, report, points)
+		published := c.deps.HASS.Publish(ctx, dev, report, points)
+		// Clear any of our own retained discovery configs for this device that we
+		// no longer publish (entities removed/renamed across versions), so they do
+		// not linger as unavailable entities in Home Assistant.
+		c.reconcileOrphans(ctx, dev.SN, published)
 	}
 	for _, p := range points {
 		topic := process.StateTopic(c.root, dev.SN, p)
@@ -128,6 +139,106 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		}
 	}
 	c.logger.Debug("coordinator.published", slog.String("sn", dev.SN), slog.Int("points", len(points)))
+}
+
+// reconcileCollectWindow is how long the orphan reconcile collects retained
+// discovery configs after subscribing; the broker delivers them right after.
+const reconcileCollectWindow = 2 * time.Second
+
+// reconcileOrphans clears this daemon's retained discovery configs for one
+// device that are no longer in the just-published set — entities removed,
+// renamed or re-platformed across versions — so they do not linger as
+// unavailable entities in Home Assistant.
+//
+// It runs only when the device's config-topic set changed (configs are
+// retained, so an unchanged poll need not reconcile), runs asynchronously, and
+// is gated per device: a re-entrant reconcile for the same serial is skipped.
+// The subscribe spans the whole discovery prefix because the serial is not its
+// own MQTT level; ownership and device scoping are enforced in code via
+// [hass.Discovery.OrphanConfigs], so other integrations' and other devices'
+// configs are never touched.
+func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published map[string]bool) {
+	if c.deps.HASS == nil {
+		return
+	}
+	sig := discoverySignature(published)
+	c.discMu.Lock()
+	changed := c.lastDiscSig[sn] != sig
+	c.lastDiscSig[sn] = sig
+	c.discMu.Unlock()
+	if !changed {
+		return
+	}
+	if _, busy := c.reconciling.LoadOrStore(sn, struct{}{}); busy {
+		return // a reconcile for this device is already in flight
+	}
+
+	// The reconcile outlives this publish call (it collects for a few seconds),
+	// so detach from the caller's cancellation/deadline — a re-read's short-lived
+	// context must not abort it — while keeping the request's values. The
+	// daemon-lifetime runCtx still bounds it (the select below).
+	bgCtx := context.WithoutCancel(ctx)
+	go func() {
+		defer c.reconciling.Delete(sn)
+		filter := c.deps.HASS.ConfigFilter()
+		var mu sync.Mutex
+		retained := map[string][]byte{}
+		handler := func(topic string, payload []byte) {
+			mu.Lock()
+			retained[topic] = append([]byte(nil), payload...)
+			mu.Unlock()
+		}
+		if err := c.deps.MQTT.Subscribe(bgCtx, filter, mqtt.QoS0, handler); err != nil {
+			c.logger.Warn("coordinator.reconcile_subscribe_failed",
+				slog.String("sn", sn), slog.String("err", err.Error()))
+			return
+		}
+		// Retained configs arrive right after subscribe; collect briefly, but
+		// abandon early if the daemon is shutting down.
+		select {
+		case <-c.runCtx.Done():
+			_ = c.deps.MQTT.Unsubscribe(bgCtx, filter)
+			return
+		case <-time.After(reconcileCollectWindow):
+		}
+		_ = c.deps.MQTT.Unsubscribe(bgCtx, filter)
+
+		mu.Lock()
+		orphans := c.deps.HASS.OrphanConfigs(retained, published, sn)
+		mu.Unlock()
+
+		cleared := c.clearOrphanConfigs(bgCtx, orphans)
+		if cleared > 0 {
+			c.logger.Info("coordinator.discovery_orphans_cleared",
+				slog.String("sn", sn), slog.Int("count", cleared))
+		}
+	}()
+}
+
+// clearOrphanConfigs removes each retained orphan config by publishing an empty
+// retained payload to its topic, returning how many were cleared.
+func (c *Coordinator) clearOrphanConfigs(ctx context.Context, orphans []string) int {
+	cleared := 0
+	for _, topic := range orphans {
+		if err := c.deps.MQTT.Publish(ctx, topic, nil, mqtt.QoS0, true); err != nil {
+			c.logger.Warn("coordinator.reconcile_clear_failed",
+				slog.String("topic", topic), slog.String("err", err.Error()))
+			continue
+		}
+		cleared++
+	}
+	return cleared
+}
+
+// discoverySignature is a stable fingerprint of a device's published config
+// topic set, so a reconcile runs only when the set actually changes.
+func discoverySignature(published map[string]bool) string {
+	topics := make([]string, 0, len(published))
+	for t := range published {
+		topics = append(topics, t)
+	}
+	sort.Strings(topics)
+	return strings.Join(topics, "\n")
 }
 
 // reReadDelay gives the device a moment to apply a write before the

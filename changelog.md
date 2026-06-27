@@ -1,3 +1,22 @@
+# Version 0.1.3 (2026-06-27)
+
+## What's Changed
+
+Adds Home Assistant MQTT discovery orphan cleanup, so entities that a newer
+release no longer publishes (a property removed, renamed or re-platformed in the
+catalog) stop lingering as permanently "unavailable" entities in Home Assistant.
+
+### Added
+
+- Discovery orphan reconciliation. After publishing a device's discovery configs
+  the coordinator collects the broker's retained configs under the discovery
+  prefix and clears (empty retained payload) any that are ours but no longer in
+  the published set. Ownership is guarded by the `zendure_` unique_id namespace
+  and the bridge's state-topic root, and scoping is per device (by the
+  `zendure_<sn>_` unique_id prefix), so configs from other integrations or other
+  Zendure devices are never touched. The reconcile is asynchronous, gated per
+  device, and only runs when a device's entity set actually changes.
+
 # Version 0.1.2 (2026-06-27)
 
 ## What's Changed
