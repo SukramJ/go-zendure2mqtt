@@ -70,10 +70,7 @@ func Browse(ctx context.Context, service string, timeout time.Duration) ([]Servi
 
 	col := newCollector()
 	buf := make([]byte, 9000)
-	for {
-		if ctx.Err() != nil {
-			break
-		}
+	for ctx.Err() == nil {
 		n, _, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			var nerr net.Error
@@ -108,7 +105,10 @@ func appendName(b []byte, name string) []byte {
 		if label == "" {
 			continue
 		}
-		b = append(b, byte(len(label)))
+		if len(label) > 63 {
+			label = label[:63] // DNS labels are capped at 63 bytes
+		}
+		b = append(b, byte(len(label))) //nolint:gosec // length clamped to 63 above, fits a byte
 		b = append(b, label...)
 	}
 	return append(b, 0)
@@ -197,9 +197,9 @@ func (c *collector) ensure(instanceFull string) *Service {
 // parseName decodes a (possibly compressed) DNS name starting at off and
 // returns the dotted name (with trailing dot) plus the offset just past the
 // name in the record stream.
-func parseName(msg []byte, off int) (string, int, error) {
+func parseName(msg []byte, off int) (name string, next int, err error) {
 	var parts []string
-	next := -1
+	next = -1
 	pos := off
 	for {
 		if pos < 0 || pos >= len(msg) {

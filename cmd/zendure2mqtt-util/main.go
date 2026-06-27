@@ -223,7 +223,8 @@ func cmdCatalogCheck(args []string) error {
 	}
 	entries := cat.Entries()
 	fmt.Printf("%s: %d entries\n", *path, len(entries))
-	for _, e := range entries {
+	for i := range entries {
+		e := &entries[i]
 		w := ""
 		if e.Writable {
 			w = " [writable]"

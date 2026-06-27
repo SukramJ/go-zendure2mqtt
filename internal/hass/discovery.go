@@ -83,7 +83,7 @@ func (d *Discovery) uniqueID(sn string, p process.Point) string {
 }
 
 // config builds the (topic, payload) for one entity.
-func (d *Discovery) config(dev source.Device, report *model.Report, p process.Point, uniqueID string) (string, []byte, error) {
+func (d *Discovery) config(dev source.Device, report *model.Report, p process.Point, uniqueID string) (topic string, payload []byte, err error) {
 	e := p.Entry
 	cfg := map[string]any{
 		"name":      e.FriendlyName(d.lang),
@@ -133,11 +133,11 @@ func (d *Discovery) config(dev source.Device, report *model.Report, p process.Po
 		cfg["payload_off"] = "0"
 	}
 
-	payload, err := json.Marshal(cfg)
+	payload, err = json.Marshal(cfg)
 	if err != nil {
 		return "", nil, fmt.Errorf("hass: marshal config: %w", err)
 	}
-	topic := fmt.Sprintf("%s/%s/%s/config", d.base, e.Platform, uniqueID)
+	topic = fmt.Sprintf("%s/%s/%s/config", d.base, e.Platform, uniqueID)
 	return topic, payload, nil
 }
 

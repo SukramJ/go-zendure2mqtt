@@ -72,12 +72,11 @@ func TestIngestExtractsService(t *testing.T) {
 // TestParseNameCompression verifies the compression-pointer path: a label
 // "foo" followed by a pointer back to a "local." encoded at offset 12.
 func TestParseNameCompression(t *testing.T) {
-	msg := make([]byte, 12) // dummy header
-	base := len(msg)
-	msg = appendName(msg, "local.") // "local." at offset 12
+	msg := append(make([]byte, 0, 32), make([]byte, 12)...) // 12-byte dummy header
+	base := len(msg)                                        // 12
+	msg = appendName(msg, "local.")                         // "local." at offset 12
 	start := len(msg)
-	msg = append(msg, 3, 'f', 'o', 'o') // label "foo"
-	msg = append(msg, 0xC0, byte(base)) // pointer to offset 12
+	msg = append(msg, 3, 'f', 'o', 'o', 0xC0, byte(base)) // label "foo" + backward pointer to offset 12
 
 	name, next, err := parseName(msg, start)
 	if err != nil {

@@ -46,20 +46,20 @@ type MQTTCredentials struct {
 
 // HostPort splits Url into host and port, defaulting to 8883 (the cloud
 // broker's TLS port) when no port is present.
-func (m MQTTCredentials) HostPort() (string, int) {
-	host, port, found := strings.Cut(m.URL, ":")
+func (m MQTTCredentials) HostPort() (host string, port int) {
+	h, portStr, found := strings.Cut(m.URL, ":")
 	if !found {
 		return m.URL, 8883
 	}
-	p, err := strconv.Atoi(port)
+	p, err := strconv.Atoi(portStr)
 	if err != nil {
-		return host, 8883
+		return h, 8883
 	}
-	return host, p
+	return h, p
 }
 
-// CloudDevice is one device entry from the login response.
-type CloudDevice struct {
+// Device is one device entry from the login response.
+type Device struct {
 	DeviceKey    string `json:"deviceKey"`
 	DeviceName   string `json:"deviceName"`
 	SnNumber     string `json:"snNumber"`
@@ -71,7 +71,7 @@ type CloudDevice struct {
 // LoginResult is the decoded {mqtt, deviceList} payload.
 type LoginResult struct {
 	MQTT       MQTTCredentials `json:"mqtt"`
-	DeviceList []CloudDevice   `json:"deviceList"`
+	DeviceList []Device        `json:"deviceList"`
 }
 
 // DecodeToken base64-decodes the app token into its API URL and app key.

@@ -148,8 +148,8 @@ func (b *Backend) Run(ctx context.Context, onReading source.Handler) error {
 
 // Reconnect timings for the cloud session.
 const (
-	reconnectMin    = 1 * time.Second
-	reconnectMax    = 30 * time.Second
+	minReconnect    = 1 * time.Second
+	maxReconnect    = 30 * time.Second
 	sessionStableAt = 60 * time.Second
 )
 
@@ -160,7 +160,7 @@ const (
 // once a session stays up long enough to count as stable — so an occasional
 // drop recovers within ~1 s while a flapping broker is throttled to ~30 s.
 func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
-	backoff := reconnectMin
+	backoff := minReconnect
 	for {
 		if ctx.Err() != nil {
 			return
@@ -172,7 +172,10 @@ func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
 			b.subscribeAll(ctx)
 			select {
 			case <-ctx.Done():
-				stopCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				// ctx is already cancelled here; detach from its cancellation
+				// (keeping its values) so the graceful disconnect still gets
+				// its own 3 s budget.
+				stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 				_ = client.Disconnect(stopCtx)
 				cancel()
 				return
@@ -180,7 +183,7 @@ func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
 				up := time.Since(connectedAt)
 				b.logger.Warn("cloud.connection_lost", slog.Duration("up", up))
 				if up >= sessionStableAt {
-					backoff = reconnectMin // stable session → reconnect promptly
+					backoff = minReconnect // stable session → reconnect promptly
 				}
 			}
 		}
@@ -189,7 +192,7 @@ func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
 			return
 		case <-time.After(backoff):
 		}
-		backoff = min(backoff*2, reconnectMax)
+		backoff = min(backoff*2, maxReconnect)
 	}
 }
 

@@ -25,7 +25,7 @@ const DefaultHTTPTimeout = 10 * time.Second
 // FetchReport performs GET http://<host>/properties/report and parses it.
 func FetchReport(ctx context.Context, hc *http.Client, host string) (*model.Report, error) {
 	url := fmt.Sprintf("http://%s/properties/report", host)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("local: build request: %w", err)
 	}
