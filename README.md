@@ -91,6 +91,12 @@ make check            # vet + fmt-check + lint + test (needs dev tools, see `mak
 
 See [docs/konzept.md](docs/konzept.md) for the architecture and design notes.
 
+Parts of go-zendure2mqtt are developed with agentic AI assistance, primarily
+[Claude Code](https://www.anthropic.com/claude-code). Incoming issues are
+likewise triaged and analysed with AI help. Every change is still reviewed by
+a human maintainer and has to pass the project's test suite before it lands —
+AI accelerates the work, it does not replace the review gate.
+
 ## Acknowledgements
 
 This project is primarily based on the official
