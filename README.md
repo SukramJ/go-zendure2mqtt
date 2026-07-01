@@ -1,5 +1,7 @@
 # go-zendure2mqtt
 
+[![Open your Home Assistant instance and add this add-on repository.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FSukramJ%2Fgo-zendure2mqtt)
+
 A small, dependency-light Go bridge that connects **Zendure** devices
 (e.g. the SolarFlow 2400 AC) to a local **MQTT** broker, with **Home Assistant**
 auto-discovery. It works **locally** over the device's on-board HTTP API
