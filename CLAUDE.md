@@ -104,10 +104,11 @@ A tiny dependency-free mDNS browser (PTR/SRV/A/TXT parse with name compression) 
 `_zendure._tcp`. Exposed via `zendure2mqtt-util discover`. Not yet wired into the local
 backend as auto-discovery (and this SolarFlow does not advertise mDNS anyway).
 
-### MQTT (`internal/mqtt`, `internal/mqtt/protocol`)
+### MQTT (`github.com/SukramJ/go-mqtt`, `github.com/SukramJ/go-mqtt/protocol`)
 Custom pure-Go MQTT 3.1.1 (no third-party lib), TLS-capable, with a reconnecting `Lifecycle`
-(used for the output broker). Lifted from the twin projects; the only local addition is the
-additive `TCPClient.ConnectionLost()` channel that the cloud backend's reconnect loop reads.
+(used for the output broker). Shared module extracted from the twin projects (formerly a
+per-repo `internal/mqtt` copy); includes the `TCPClient.ConnectionLost()` channel that the
+cloud backend's reconnect loop reads.
 
 ### Topic layout
 ```
@@ -138,8 +139,8 @@ images are built by `.github/workflows/addon-image.yml` (`ghcr.io/sukramj/go-zen
 Plain table/assert tests with hermetic inputs (no broker/device needed): `config` (env
 override + validation), `process` (scaling / value maps / packData + topic scheme), `virtual`
 (state derivation + write props), `cloud` (token decode + sign), `discovery` (mDNS parse incl.
-compression), `web` (handlers + basic auth). The `internal/mqtt` tests come from the upstream
-twin. Run with `-race` (`make test`).
+compression), `web` (handlers + basic auth). MQTT-client tests live in the shared
+`github.com/SukramJ/go-mqtt` module, not in this repo. Run with `-race` (`make test`).
 
 ## Release
 

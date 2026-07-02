@@ -19,11 +19,12 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/SukramJ/go-mqtt"
+
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
 	"github.com/SukramJ/go-zendure2mqtt/internal/coordinator"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
-	"github.com/SukramJ/go-zendure2mqtt/internal/mqtt"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/state"
 	"github.com/SukramJ/go-zendure2mqtt/internal/version"
