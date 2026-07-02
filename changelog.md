@@ -1,3 +1,28 @@
+# Version 0.2.0 (2026-07-02)
+
+## What's Changed
+
+Replaces the per-repo `internal/mqtt` copy with the shared
+[`github.com/SukramJ/go-mqtt`](https://github.com/SukramJ/go-mqtt) module
+(v0.1.0), so MQTT transport fixes land once and are picked up via `go get -u`
+instead of drifting across the four `go-*2mqtt` bridges.
+
+### Changed
+
+- MQTT client switched from the local `internal/mqtt` package to the shared
+  `github.com/SukramJ/go-mqtt` module (v0.1.0) — a superset of the four
+  previously-duplicated `internal/mqtt` copies. No behavioral change to the
+  cloud backend's event-driven reconnect, which keeps using
+  `TCPClient.ConnectionLost()`.
+
+### Security / Fixed (inherited from the shared module)
+
+- MQTT frame-size cap: the wire codec now rejects an oversized `remaining
+  length` before allocating a body buffer, closing an OOM/DoS vector against
+  a malicious or malfunctioning broker.
+- Broker-rejected subscriptions are now logged: SUBACK return codes are
+  parsed and surfaced instead of being silently ignored.
+
 # Version 0.1.4 (2026-07-02)
 
 ## What's Changed
