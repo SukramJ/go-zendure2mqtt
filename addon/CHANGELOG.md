@@ -5,6 +5,15 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.1.4
+
+- MQTT half-open connections are now detected and recovered. A broker or network
+  drop without a TCP FIN/RST (e.g. a Mosquitto or Home Assistant restart) used to
+  leave the read loop blocked in `ReadFrame` forever with no reconnect, and
+  publishes timed out with `context deadline exceeded` until a manual restart. A
+  PINGRESP watchdog now declares the connection lost when a keep-alive ping goes
+  unanswered, so the existing reconnect logic re-dials automatically.
+
 ## 0.1.3
 
 - Home Assistant discovery orphan cleanup: entities a newer release no longer
