@@ -16,7 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SukramJ/go-zendure2mqtt/internal/mqtt"
+	"github.com/SukramJ/go-mqtt"
+
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
