@@ -184,7 +184,7 @@ func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published
 		filter := c.deps.HASS.ConfigFilter()
 		var mu sync.Mutex
 		retained := map[string][]byte{}
-		handler := func(topic string, payload []byte) {
+		handler := func(topic string, payload []byte, _ bool) {
 			mu.Lock()
 			retained[topic] = append([]byte(nil), payload...)
 			mu.Unlock()
@@ -273,7 +273,7 @@ func (c *Coordinator) reReadSoon(dev source.Device) {
 
 // handleSet routes an inbound command topic to a backend write.
 // Topic shape: <root>/<sn>/<group>/<topic>/set.
-func (c *Coordinator) handleSet(topic string, payload []byte) {
+func (c *Coordinator) handleSet(topic string, payload []byte, _ bool) {
 	parts := strings.Split(topic, "/")
 	if len(parts) != 5 || parts[0] != c.root || parts[4] != "set" {
 		return
