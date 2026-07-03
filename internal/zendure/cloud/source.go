@@ -221,7 +221,7 @@ func (b *Backend) subscribeAll(ctx context.Context) {
 
 // handleMessage routes an inbound cloud message: only telemetry reports are
 // turned into readings.
-func (b *Backend) handleMessage(topic string, payload []byte) {
+func (b *Backend) handleMessage(topic string, payload []byte, _ bool) {
 	deviceID, sub := deviceAndSub(topic)
 	if sub != reportSubtopic {
 		return
