@@ -1,3 +1,25 @@
+# Version 0.4.0 (2026-07-04)
+
+## What's Changed
+
+### Changed
+
+- **MQTT publishes are circuit-protected.** Upgraded to `go-mqtt` v1.1.0
+  and adopted its new `Breaker` decorator on the output-broker publish
+  path (coordinator state/availability/discovery-clear publishes and the
+  Home Assistant discovery configs): during a degraded-broker phase (TCP
+  link up, acknowledgements missing) publishes fail fast with
+  `ErrCircuitOpen` instead of each stalling on the full ack timeout.
+  After 5 consecutive broker-side failures the circuit opens; after 30
+  seconds a single half-open probe tests recovery, and one success
+  closes the circuit again. Local conditions (caller cancellation,
+  oversized packets) never trip it. Every state transition is logged as
+  a `zendure2mqtt.mqtt_breaker_state` warning. Subscriptions are
+  deliberately not gated — they carry their own SUBACK-bounded wait and
+  must keep working while the publish side is browned out. The Zendure
+  cloud link is untouched — the breaker guards the output broker only.
+  The lifecycle's reconnect loop remains in charge of the link itself.
+
 # Version 0.3.0 (2026-07-04)
 
 ## What's Changed
