@@ -83,15 +83,13 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// --- MQTT (output broker) ---
 	statusTopic := cfg.MQTTTopic + "/bridge/status"
 	mqttClient := mqtt.NewTCPClient(mqtt.TCPConfig{
-		BrokerURL:    fmt.Sprintf("tcp://%s:%d", cfg.MQTTServer, cfg.MQTTPort),
-		ClientID:     config.MQTTClientID,
-		Username:     cfg.MQTTLogin,
-		Password:     cfg.MQTTPassword,
-		WillTopic:    statusTopic,
-		WillPayload:  []byte("offline"),
-		WillRetain:   true,
-		CleanSession: true,
-		Logger:       logger,
+		BrokerURL:  fmt.Sprintf("tcp://%s:%d", cfg.MQTTServer, cfg.MQTTPort),
+		ClientID:   config.MQTTClientID,
+		Username:   cfg.MQTTLogin,
+		Password:   cfg.MQTTPassword,
+		Will:       &mqtt.Will{Topic: statusTopic, Payload: []byte("offline"), Retain: true},
+		CleanStart: true,
+		Logger:     logger,
 	})
 	lifecycle := mqtt.NewLifecycle(mqtt.LifecycleConfig{Logger: logger}, mqttClient)
 	if err := lifecycle.Start(ctx); err != nil {

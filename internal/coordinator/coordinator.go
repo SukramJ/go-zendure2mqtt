@@ -82,7 +82,7 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	c.PublishOnline(ctx)
 
 	setFilter := c.root + "/+/+/+/set"
-	if err := c.deps.MQTT.Subscribe(ctx, setFilter, mqtt.QoS0, c.handleSet); err != nil {
+	if _, err := c.deps.MQTT.Subscribe(ctx, setFilter, mqtt.QoS0, c.handleSet); err != nil {
 		c.logger.Warn("coordinator.subscribe_failed", slog.String("filter", setFilter), slog.String("err", err.Error()))
 	}
 
@@ -184,12 +184,12 @@ func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published
 		filter := c.deps.HASS.ConfigFilter()
 		var mu sync.Mutex
 		retained := map[string][]byte{}
-		handler := func(topic string, payload []byte, _ bool) {
+		handler := func(msg *mqtt.Message) {
 			mu.Lock()
-			retained[topic] = append([]byte(nil), payload...)
+			retained[msg.Topic] = append([]byte(nil), msg.Payload...)
 			mu.Unlock()
 		}
-		if err := c.deps.MQTT.Subscribe(bgCtx, filter, mqtt.QoS0, handler); err != nil {
+		if _, err := c.deps.MQTT.Subscribe(bgCtx, filter, mqtt.QoS0, handler); err != nil {
 			c.logger.Warn("coordinator.reconcile_subscribe_failed",
 				slog.String("sn", sn), slog.String("err", err.Error()))
 			return
@@ -273,8 +273,8 @@ func (c *Coordinator) reReadSoon(dev source.Device) {
 
 // handleSet routes an inbound command topic to a backend write.
 // Topic shape: <root>/<sn>/<group>/<topic>/set.
-func (c *Coordinator) handleSet(topic string, payload []byte, _ bool) {
-	parts := strings.Split(topic, "/")
+func (c *Coordinator) handleSet(msg *mqtt.Message) {
+	parts := strings.Split(msg.Topic, "/")
 	if len(parts) != 5 || parts[0] != c.root || parts[4] != "set" {
 		return
 	}
@@ -284,7 +284,7 @@ func (c *Coordinator) handleSet(topic string, payload []byte, _ bool) {
 		c.logger.Warn("coordinator.set_unknown_device", slog.String("sn", sn))
 		return
 	}
-	if c.handleSwitchSet(dev, leaf, string(payload)) {
+	if c.handleSwitchSet(dev, leaf, string(msg.Payload)) {
 		return // handled by a virtual switch
 	}
 	entry, ok := c.deps.Catalog.ByTopic(leaf)
@@ -292,7 +292,7 @@ func (c *Coordinator) handleSet(topic string, payload []byte, _ bool) {
 		c.logger.Warn("coordinator.set_not_writable", slog.String("topic", leaf))
 		return
 	}
-	value := decodeCommand(entry, string(payload))
+	value := decodeCommand(entry, string(msg.Payload))
 	ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
 	defer cancel()
 	if err := c.deps.Backend.Write(ctx, dev, map[string]any{entry.Property: value}); err != nil {
