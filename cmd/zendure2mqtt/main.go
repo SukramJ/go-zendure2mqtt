@@ -95,6 +95,20 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	if err := lifecycle.Start(ctx); err != nil {
 		return fmt.Errorf("mqtt: %w", err)
 	}
+	// Circuit breaker between the bridge and the output broker: during a
+	// degraded-broker phase (TCP link up, acks missing) publishes fail
+	// fast with mqtt.ErrCircuitOpen instead of each stalling on the ack
+	// timeout, and bounded half-open probes test recovery. Defaults: 5
+	// consecutive broker-side failures open the circuit, recovery is
+	// probed after 30s. The lifecycle's reconnect loop stays in charge
+	// of the link itself.
+	breaker := mqtt.NewBreaker(mqttClient, mqtt.BreakerConfig{
+		OnStateChange: func(from, to mqtt.BreakerState) {
+			logger.Warn("zendure2mqtt.mqtt_breaker_state",
+				slog.String("from", from.String()),
+				slog.String("to", to.String()))
+		},
+	})
 	defer func() {
 		stopCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
@@ -104,7 +118,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// --- HA discovery (optional) ---
 	var discovery *hass.Discovery
 	if cfg.HASSEnable {
-		discovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, mqttClient, logger)
+		discovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, breaker, logger)
 	}
 
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
@@ -117,7 +131,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	coord := coordinator.New(coordinator.Deps{
 		Cfg:     cfg,
 		Backend: backend,
-		MQTT:    mqttClient,
+		MQTT:    &mqttSession{Breaker: breaker, Subscriber: mqttClient},
 		Catalog: cat,
 		HASS:    discovery,
 		State:   store,
@@ -151,6 +165,20 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	offCancel()
 	return err
 }
+
+// mqttSession is the MQTT surface handed to the coordinator: Publish
+// is gated by the circuit breaker, while Subscribe/Unsubscribe go
+// straight to the client — subscriptions are startup-path calls with
+// their own SUBACK-bounded wait and must not be rejected during a
+// publish-side broker brownout.
+type mqttSession struct {
+	*mqtt.Breaker
+	mqtt.Subscriber
+}
+
+// Compile-time contract: the session satisfies the coordinator's
+// combined MQTT dependency.
+var _ mqtt.Client = (*mqttSession)(nil)
 
 // buildBackend constructs the transport backend selected by CONNECTION.
 func buildBackend(cfg *config.Config, logger *slog.Logger) source.Backend {

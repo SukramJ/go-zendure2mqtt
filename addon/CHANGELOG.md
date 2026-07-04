@@ -5,6 +5,14 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.4.0
+
+- MQTT publishes to the output broker are now circuit-protected: when the
+  broker stops acknowledging (link up, acks missing), publishes fail fast and
+  a periodic probe tests recovery instead of every publish stalling on the
+  ack timeout. State transitions appear as `zendure2mqtt.mqtt_breaker_state`
+  warnings in the add-on log. Command subscriptions are unaffected.
+
 ## 0.1.4
 
 - MQTT half-open connections are now detected and recovered. A broker or network
