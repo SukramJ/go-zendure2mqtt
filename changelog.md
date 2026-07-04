@@ -1,3 +1,36 @@
+# Version 0.3.0 (2026-07-04)
+
+## What's Changed
+
+Adopts [`github.com/SukramJ/go-mqtt`](https://github.com/SukramJ/go-mqtt) v1.0.0.
+**MQTT 5.0 is now the wire default** for the output broker link (3.1.1 is still
+selectable via `ProtocolVersion`); reconnects are event-driven off the client's
+`ConnectionLost()` channel for tighter recovery; and the underlying client now
+supports full QoS 0/1/2 (this bridge itself still only ever publishes/subscribes
+at QoS 0).
+
+### Changed
+
+- Every `Subscribe` call (output-broker command subscription, the HA-discovery
+  orphan-reconcile subscribe, and the cloud backend's per-device subscribes) now
+  blocks until the broker's SUBACK and returns a hard error on a rejected filter,
+  instead of the subscription silently going live with only a broker-side log
+  line to notice a reject.
+- `Publish` now fails fast when the underlying connection is down, rather than
+  blocking until a dial/write timeout.
+- `MessageHandler` is now `func(*mqtt.Message)` (was
+  `func(topic string, payload []byte, retained bool)`); the coordinator's
+  `handleSet`, the discovery orphan-reconcile handler, and the cloud backend's
+  `handleMessage` were migrated to `msg.Topic`/`msg.Payload` natively.
+- Output broker LWT is now configured via `Will: &mqtt.Will{Topic, Payload,
+  Retain}` (was `WillTopic`/`WillPayload`/`WillRetain`); `CleanSession` was
+  renamed to `CleanStart` (MQTT 5.0 terminology) — both apply to the output
+  broker only, with no config-file or env-var change for this bridge's users.
+- The Zendure cloud link (`internal/zendure/cloud/source.go`) is pinned to
+  `ProtocolVersion: mqtt.ProtocolV311`: the third-party `mqtteu.zen-iot.com`
+  broker's MQTT 5.0 support is unverified, so the cloud connection stays on
+  3.1.1 while the local output broker uses the new v5 default.
+
 # Version 0.2.1 (2026-07-03)
 
 ## What's Changed

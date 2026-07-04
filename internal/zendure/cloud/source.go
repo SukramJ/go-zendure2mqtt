@@ -129,13 +129,17 @@ func (b *Backend) Run(ctx context.Context, onReading source.Handler) error {
 			slog.String("hint", "Zendure cloud cert is non-standard; TLS verification disabled (connection stays encrypted). Set CLOUD_TLS_VERIFY: true to enforce."))
 	}
 	client := mqtt.NewTCPClient(mqtt.TCPConfig{
-		BrokerURL:    fmt.Sprintf("tls://%s:%d", host, port),
-		ClientID:     creds.ClientID,
-		Username:     creds.Username,
-		Password:     creds.Password,
-		TLSConfig:    tlsCfg,
-		CleanSession: true,
-		Logger:       b.logger,
+		BrokerURL: fmt.Sprintf("tls://%s:%d", host, port),
+		ClientID:  creds.ClientID,
+		Username:  creds.Username,
+		Password:  creds.Password,
+		TLSConfig: tlsCfg,
+		// Pinned to 3.1.1: this is the third-party mqtteu.zen-iot.com broker,
+		// and its MQTT 5.0 support is unverified. The local output broker
+		// deliberately stays on the go-mqtt v1.0.0 default (MQTT 5.0).
+		ProtocolVersion: mqtt.ProtocolV311,
+		CleanStart:      true,
+		Logger:          b.logger,
 	})
 	b.mu.Lock()
 	b.client = client
@@ -211,7 +215,7 @@ func (b *Backend) subscribeAll(ctx context.Context) {
 			fmt.Sprintf("iot/%s/%s/#", dev.ProductKey, dev.DeviceID),
 			fmt.Sprintf("/%s/%s/#", dev.ProductKey, dev.DeviceID),
 		} {
-			if err := client.Subscribe(ctx, filter, mqtt.QoS0, b.handleMessage); err != nil {
+			if _, err := client.Subscribe(ctx, filter, mqtt.QoS0, b.handleMessage); err != nil {
 				b.logger.Warn("cloud.subscribe_failed", slog.String("filter", filter), slog.String("err", err.Error()))
 			}
 		}
@@ -221,8 +225,8 @@ func (b *Backend) subscribeAll(ctx context.Context) {
 
 // handleMessage routes an inbound cloud message: only telemetry reports are
 // turned into readings.
-func (b *Backend) handleMessage(topic string, payload []byte, _ bool) {
-	deviceID, sub := deviceAndSub(topic)
+func (b *Backend) handleMessage(msg *mqtt.Message) {
+	deviceID, sub := deviceAndSub(msg.Topic)
 	if sub != reportSubtopic {
 		return
 	}
@@ -233,7 +237,7 @@ func (b *Backend) handleMessage(topic string, payload []byte, _ bool) {
 	if !ok || handler == nil {
 		return
 	}
-	report, err := model.ParseReport(payload)
+	report, err := model.ParseReport(msg.Payload)
 	if err != nil {
 		b.logger.Warn("cloud.parse_failed", slog.String("device", deviceID), slog.String("err", err.Error()))
 		return
