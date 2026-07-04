@@ -32,10 +32,12 @@ Daraus folgt ein gemeinsames Geräte-/Property-Modell plus ein
 
 **Zwei MQTT-Rollen** im Cloud-Modus:
 - **Ausgabe-Broker** (lokaler Mosquitto): publish normalisierter State +
-  HA-Discovery, subscribe HA-Befehle (`…/set`).
+  HA-Discovery, subscribe HA-Befehle (`…/set`). Nutzt MQTT 5.0 (go-mqtt
+  v1.0.0 Default).
 - **Zendure-Cloud-Broker** (dynamisch aus dem Login, z. B.
   `mqtteu.zen-iot.com:8883`, TLS): subscribe Telemetrie, publish Steuerung.
-  Reine Eingangsquelle.
+  Reine Eingangsquelle. Fest auf `ProtocolV311` gepinnt — der
+  Drittanbieter-Broker hat unbestätigten MQTT-5.0-Support.
 
 ## 2. Architektur / Pakete
 

@@ -129,13 +129,17 @@ func (b *Backend) Run(ctx context.Context, onReading source.Handler) error {
 			slog.String("hint", "Zendure cloud cert is non-standard; TLS verification disabled (connection stays encrypted). Set CLOUD_TLS_VERIFY: true to enforce."))
 	}
 	client := mqtt.NewTCPClient(mqtt.TCPConfig{
-		BrokerURL:  fmt.Sprintf("tls://%s:%d", host, port),
-		ClientID:   creds.ClientID,
-		Username:   creds.Username,
-		Password:   creds.Password,
-		TLSConfig:  tlsCfg,
-		CleanStart: true,
-		Logger:     b.logger,
+		BrokerURL: fmt.Sprintf("tls://%s:%d", host, port),
+		ClientID:  creds.ClientID,
+		Username:  creds.Username,
+		Password:  creds.Password,
+		TLSConfig: tlsCfg,
+		// Pinned to 3.1.1: this is the third-party mqtteu.zen-iot.com broker,
+		// and its MQTT 5.0 support is unverified. The local output broker
+		// deliberately stays on the go-mqtt v1.0.0 default (MQTT 5.0).
+		ProtocolVersion: mqtt.ProtocolV311,
+		CleanStart:      true,
+		Logger:          b.logger,
 	})
 	b.mu.Lock()
 	b.client = client

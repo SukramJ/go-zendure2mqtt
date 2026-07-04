@@ -105,10 +105,13 @@ A tiny dependency-free mDNS browser (PTR/SRV/A/TXT parse with name compression) 
 backend as auto-discovery (and this SolarFlow does not advertise mDNS anyway).
 
 ### MQTT (`github.com/SukramJ/go-mqtt`, `github.com/SukramJ/go-mqtt/protocol`)
-Custom pure-Go MQTT 3.1.1 (no third-party lib), TLS-capable, with a reconnecting `Lifecycle`
-(used for the output broker). Shared module extracted from the twin projects (formerly a
-per-repo `internal/mqtt` copy); includes the `TCPClient.ConnectionLost()` channel that the
-cloud backend's reconnect loop reads.
+Custom pure-Go MQTT client (no third-party lib), TLS-capable, with a reconnecting `Lifecycle`
+(used for the output broker). Since go-mqtt v1.0.0 the wire default is **MQTT 5.0**; the
+output/local broker link uses that default, while the Zendure cloud link
+(`internal/zendure/cloud/source.go`) pins `ProtocolVersion: mqtt.ProtocolV311` — the
+third-party broker's MQTT 5.0 support is unverified. Shared module extracted from the twin
+projects (formerly a per-repo `internal/mqtt` copy); includes the `TCPClient.ConnectionLost()`
+channel that the cloud backend's reconnect loop reads.
 
 ### Topic layout
 ```
