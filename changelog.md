@@ -10,11 +10,12 @@
   language-independent `entity_id`s — entities read `<DEVICE_NAME> …`
   (e.g. `sensor.balkon_speicher_electric_level`) instead of
   `Zendure <SN> …`. Battery sub-devices inherit it (`<DEVICE_NAME> Pack <sn>`).
-  MQTT topics and `unique_id`s stay keyed on the serial number, so the name is
-  purely cosmetic and safe to change. Note: Home Assistant does not rename
-  already-registered `entity_id`s — setting `DEVICE_NAME` on a device that is
-  already onboarded updates the device name but needs a discovery reset (or a
-  manual rename) to move existing entity_ids.
+  MQTT topics, the retained discovery config topics and the `unique_id`s all
+  stay keyed on the serial number — the name is purely cosmetic and needs **no
+  migration**. Note: Home Assistant does not rename already-registered
+  `entity_id`s — setting `DEVICE_NAME` on a device that is already onboarded
+  updates the device name but needs a discovery reset (or a manual rename) to
+  move existing entity_ids.
 
 # Version 0.4.0 (2026-07-04)
 

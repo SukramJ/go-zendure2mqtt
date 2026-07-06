@@ -117,6 +117,7 @@ func TestDeviceNameSeedsEntityID(t *testing.T) {
 			d.Publish(context.Background(), dev, report, []process.Point{point})
 
 			var cfg struct {
+				UniqueID        string `json:"unique_id"`
 				DefaultEntityID string `json:"default_entity_id"`
 				Device          struct {
 					Name string `json:"name"`
@@ -130,6 +131,13 @@ func TestDeviceNameSeedsEntityID(t *testing.T) {
 			}
 			if cfg.DefaultEntityID != c.wantEntityID {
 				t.Errorf("default_entity_id = %q, want %q", cfg.DefaultEntityID, c.wantEntityID)
+			}
+			// The unique_id (and thus the retained config topic) stays keyed on
+			// the serial number regardless of DeviceName — this is the stable
+			// HA identity, so changing the name never orphans entities or needs
+			// a migration.
+			if cfg.UniqueID != "zendure_HOA1_electric_level" {
+				t.Errorf("unique_id = %q, want stable SN-based id (DeviceName must not affect it)", cfg.UniqueID)
 			}
 		})
 	}
