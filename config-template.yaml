@@ -15,6 +15,8 @@ REFRESH: 15          # local HTTP poll interval in seconds
 LOCAL_DEVICES:
   - SN: SF2400XXXXXXXX     # device serial number
     HOST: 192.168.1.50     # device IP or mDNS hostname
+    DEVICE_NAME: Balkon    # optional friendly name; replaces the SN in HA
+                           # device names and entity_ids (default: Zendure <SN>)
     MODEL: solarflow 2400 ac
 
 # --- Cloud transport (only used when CONNECTION: cloud) ---

@@ -1,3 +1,21 @@
+# Version 0.5.0 (2026-07-06)
+
+## What's Changed
+
+### Added
+
+- **Optional friendly device name.** Each `LOCAL_DEVICES` entry now takes an
+  optional `DEVICE_NAME` (add-on option `device_name`). When set it replaces
+  the serial number in the Home Assistant device name and seeds the
+  language-independent `entity_id`s — entities read `<DEVICE_NAME> …`
+  (e.g. `sensor.balkon_speicher_electric_level`) instead of
+  `Zendure <SN> …`. Battery sub-devices inherit it (`<DEVICE_NAME> Pack <sn>`).
+  MQTT topics and `unique_id`s stay keyed on the serial number, so the name is
+  purely cosmetic and safe to change. Note: Home Assistant does not rename
+  already-registered `entity_id`s — setting `DEVICE_NAME` on a device that is
+  already onboarded updates the device name but needs a discovery reset (or a
+  manual rename) to move existing entity_ids.
+
 # Version 0.4.0 (2026-07-04)
 
 ## What's Changed

@@ -66,9 +66,13 @@ if bashio::config.has_value 'local_devices' && [ -n "$(bashio::config 'local_dev
   for i in $(bashio::config 'local_devices|keys'); do
     sn="$(bashio::config "local_devices[${i}].sn")"
     host="$(bashio::config "local_devices[${i}].host")"
+    device_name="$(bashio::config "local_devices[${i}].device_name")"
     model="$(bashio::config "local_devices[${i}].model")"
     echo "  - SN: \"${sn}\"" >> "${CONFIG}"
     echo "    HOST: \"${host}\"" >> "${CONFIG}"
+    if [ -n "${device_name}" ] && [ "${device_name}" != "null" ]; then
+      echo "    DEVICE_NAME: \"${device_name}\"" >> "${CONFIG}"
+    fi
     if [ -n "${model}" ] && [ "${model}" != "null" ]; then
       echo "    MODEL: \"${model}\"" >> "${CONFIG}"
     fi

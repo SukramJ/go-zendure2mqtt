@@ -222,11 +222,17 @@ func numString(v any) string {
 
 // deviceName is the HA device friendly name: the unit, or a per-pack
 // sub-device name. Language-independent (used to seed the entity_id).
+// A configured DeviceName replaces the "Zendure <SN>" default; when unset
+// the serial-number default applies.
 func (d *Discovery) deviceName(dev source.Device, p process.Point) string {
-	if p.PackSN == "" {
-		return "Zendure " + dev.SN
+	base := "Zendure " + dev.SN
+	if dev.DeviceName != "" {
+		base = dev.DeviceName
 	}
-	return "Zendure " + dev.SN + " Pack " + p.PackSN
+	if p.PackSN == "" {
+		return base
+	}
+	return base + " Pack " + p.PackSN
 }
 
 // entityObjectID builds an English, language-independent entity object id

@@ -25,6 +25,11 @@ type Device struct {
 	// SN is the device serial number, used as the stable MQTT identity
 	// (topic root segment) regardless of transport.
 	SN string
+	// DeviceName is an optional human-friendly device name. When non-empty it
+	// is used for the HA device name and to seed entity_ids in place of the
+	// serial number; when empty the SN-based default ("Zendure <SN>") applies.
+	// It never affects MQTT topics or unique_ids, which stay keyed on SN.
+	DeviceName string
 	// DeviceID is the cloud device key. For local-only devices it equals SN.
 	DeviceID string
 	// ProductKey is the cloud MQTT topic component. Empty for local devices.

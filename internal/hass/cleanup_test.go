@@ -5,6 +5,7 @@ package hass
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 
@@ -85,6 +86,52 @@ func TestOrphanConfigs(t *testing.T) {
 	got := d.OrphanConfigs(retained, published, "HOA1")
 	if len(got) != 1 || got[0] != orphan {
 		t.Fatalf("OrphanConfigs = %v, want [%s]", got, orphan)
+	}
+}
+
+// TestDeviceNameSeedsEntityID checks that a configured DeviceName replaces the
+// serial number in both the HA device name and the (language-independent)
+// default_entity_id, while an unset name keeps the "Zendure <SN>" default.
+func TestDeviceNameSeedsEntityID(t *testing.T) {
+	report := &model.Report{Product: "solarFlow2400AC"}
+	point := process.Point{Group: "now", Topic: "electric_level", Value: 55, Entry: &catalog.Entry{
+		Property: "electricLevel", Topic: "electric_level", Group: "now",
+		Platform: "sensor", Unit: "%", Name: "Battery Level",
+	}}
+	const cfgTopic = "homeassistant/sensor/zendure_HOA1_electric_level/config"
+
+	cases := []struct {
+		name           string
+		deviceName     string
+		wantDeviceName string
+		wantEntityID   string
+	}{
+		{"default", "", "Zendure HOA1", "sensor.zendure_hoa1_electric_level"},
+		{"configured", "Balkon Speicher", "Balkon Speicher", "sensor.balkon_speicher_electric_level"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pub := &stubPub{}
+			d := newDisc(pub)
+			dev := source.Device{SN: "HOA1", DeviceName: c.deviceName, Model: "SolarFlow 2400 AC"}
+			d.Publish(context.Background(), dev, report, []process.Point{point})
+
+			var cfg struct {
+				DefaultEntityID string `json:"default_entity_id"`
+				Device          struct {
+					Name string `json:"name"`
+				} `json:"device"`
+			}
+			if err := json.Unmarshal(pub.topics[cfgTopic], &cfg); err != nil {
+				t.Fatalf("no/invalid config on %q: %v", cfgTopic, err)
+			}
+			if cfg.Device.Name != c.wantDeviceName {
+				t.Errorf("device.name = %q, want %q", cfg.Device.Name, c.wantDeviceName)
+			}
+			if cfg.DefaultEntityID != c.wantEntityID {
+				t.Errorf("default_entity_id = %q, want %q", cfg.DefaultEntityID, c.wantEntityID)
+			}
+		})
 	}
 }
 
