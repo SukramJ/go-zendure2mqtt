@@ -97,13 +97,21 @@ func (d *Discovery) uniqueID(sn string, p process.Point) string {
 // config builds the (topic, payload) for one entity.
 func (d *Discovery) config(dev source.Device, report *model.Report, p process.Point, uniqueID string) (topic string, payload []byte, err error) {
 	e := p.Entry
+	// object_id and default_entity_id both seed an English, language-independent
+	// entity_id (device name + English topic) so entity_ids stay stable while the
+	// localized display name changes. HA deprecated object_id in favour of
+	// default_entity_id, but current releases still honour object_id reliably
+	// whereas default_entity_id is not yet consistently applied (a localized name
+	// otherwise leaks into the entity_id) — so we publish BOTH, matching the
+	// go-mtec2mqtt twin: object_id keeps today's HA correct, default_entity_id
+	// keeps future HA correct. unique_id is deliberately independent of the seed,
+	// so the entity identity never changes with the name.
+	seed := entityObjectID(d.deviceName(dev, p), p.Topic)
 	cfg := map[string]any{
-		"name":      e.FriendlyName(d.lang),
-		"unique_id": uniqueID,
-		// default_entity_id replaces the removed object_id field: it seeds an
-		// English, language-independent entity_id (device name + English topic)
-		// so entity_ids stay stable while the display name is localized.
-		"default_entity_id": e.Platform + "." + entityObjectID(d.deviceName(dev, p), p.Topic),
+		"name":              e.FriendlyName(d.lang),
+		"unique_id":         uniqueID,
+		"object_id":         seed,
+		"default_entity_id": e.Platform + "." + seed,
 		"state_topic":       process.StateTopic(d.root, dev.SN, p),
 		// Availability ties every entity to the bridge status (LWT) topic so HA
 		// shows them unavailable when the bridge is down.
