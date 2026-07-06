@@ -24,7 +24,7 @@ For a standard Home Assistant install with the Mosquitto broker:
 | --- | --- | --- | --- |
 | `connection` | list(local\|cloud) | `local` | Transport: poll devices locally over HTTP, or stream from the Zendure cloud. |
 | `refresh` | int | `15` | Local HTTP poll interval (seconds). |
-| `local_devices` | list | `[]` | Devices to poll in local mode. Each entry: `sn` (serial), `host` (IP/hostname), optional `model`. |
+| `local_devices` | list | `[]` | Devices to poll in local mode. Each entry: `sn` (serial), `host` (IP/hostname), optional `device_name` (friendly name that replaces the serial in Home Assistant device names and entity_ids), optional `model`. |
 | `cloud_app_token` | password | `""` | Base64 app token from the Zendure app (cloud mode). Decodes to `<api_url>.<appKey>`. |
 | `cloud_tls_verify` | bool | `false` | Enforce strict TLS certificate verification for the cloud broker. The Zendure cloud cert is non-standard, so this is off by default (the connection stays TLS-encrypted). |
 | `mqtt_server` | str | `""` | MQTT broker host. **Leave empty** to auto-use the Home Assistant MQTT broker. Set only to target a different broker. |

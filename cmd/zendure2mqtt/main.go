@@ -191,7 +191,7 @@ func buildBackend(cfg *config.Config, logger *slog.Logger) source.Backend {
 	}
 	devices := make([]local.DeviceConfig, 0, len(cfg.LocalDevices))
 	for _, d := range cfg.LocalDevices {
-		devices = append(devices, local.DeviceConfig{SN: d.SN, Host: d.Host, Model: d.Model})
+		devices = append(devices, local.DeviceConfig{SN: d.SN, Host: d.Host, DeviceName: d.DeviceName, Model: d.Model})
 	}
 	return local.New(devices, cfg.RefreshDuration(), logger)
 }

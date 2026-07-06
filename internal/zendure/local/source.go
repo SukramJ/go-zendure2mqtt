@@ -17,9 +17,10 @@ import (
 // DeviceConfig is one statically configured local device. (mDNS discovery
 // will populate the same shape automatically in a later milestone.)
 type DeviceConfig struct {
-	SN    string
-	Host  string
-	Model string
+	SN         string
+	Host       string
+	DeviceName string
+	Model      string
 }
 
 // Backend polls one or more local Zendure devices over HTTP and writes
@@ -47,7 +48,7 @@ func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Back
 		bySN:     make(map[string]source.Device, len(cfgs)),
 	}
 	for _, c := range cfgs {
-		dev := source.Device{SN: c.SN, DeviceID: c.SN, Model: c.Model, Address: c.Host}
+		dev := source.Device{SN: c.SN, DeviceID: c.SN, DeviceName: c.DeviceName, Model: c.Model, Address: c.Host}
 		b.devices = append(b.devices, dev)
 		b.bySN[c.SN] = dev
 	}

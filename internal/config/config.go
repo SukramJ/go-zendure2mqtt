@@ -37,9 +37,14 @@ const (
 // LocalDevice is one statically configured local device. mDNS discovery
 // (a later milestone) populates the same shape automatically.
 type LocalDevice struct {
-	SN    string `yaml:"SN"`
-	Host  string `yaml:"HOST"`
-	Model string `yaml:"MODEL"`
+	SN   string `yaml:"SN"`
+	Host string `yaml:"HOST"`
+	// DeviceName is an optional human-friendly device name. When set it
+	// replaces the serial number in the HA device name and (via slugify)
+	// seeds the entity_ids, so entities read "<DeviceName> …" instead of
+	// "Zendure <SN> …".
+	DeviceName string `yaml:"DEVICE_NAME"`
+	Model      string `yaml:"MODEL"`
 }
 
 // Config is the validated daemon configuration. Fields are flat to match
