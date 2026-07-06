@@ -1,3 +1,19 @@
+# Version 0.5.1 (2026-07-06)
+
+## What's Changed
+
+### Fixed
+
+- **Entity-id seed now published as both `object_id` and `default_entity_id`.**
+  Current Home Assistant releases do not yet honour `default_entity_id`
+  reliably (home-assistant/core#157241 — the seed is ignored and a generic
+  `entity_id` is generated instead), while the deprecated `object_id` still
+  works. The discovery payload now carries both — `object_id` for today's HA,
+  `default_entity_id` for future HA — so the configured `DEVICE_NAME` (0.5.0)
+  actually lands in the `entity_id`. Both carry the same English,
+  language-independent seed; only the display `name` is localized. Matches the
+  go-mtec2mqtt twin.
+
 # Version 0.5.0 (2026-07-06)
 
 ## What's Changed
@@ -16,13 +32,6 @@
   `entity_id`s — setting `DEVICE_NAME` on a device that is already onboarded
   updates the device name but needs a discovery reset (or a manual rename) to
   move existing entity_ids.
-- **Entity-id seed now published as both `object_id` and `default_entity_id`.**
-  Current Home Assistant releases do not yet honour `default_entity_id`
-  reliably (home-assistant/core#157241 — the seed is ignored and a generic
-  `entity_id` is generated instead), while the deprecated `object_id` still
-  works. The discovery payload now carries both — `object_id` for today's HA,
-  `default_entity_id` for future HA — so the device name actually lands in the
-  `entity_id`. Matches the go-mtec2mqtt twin.
 
 # Version 0.4.0 (2026-07-04)
 
