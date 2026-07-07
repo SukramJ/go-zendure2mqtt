@@ -47,11 +47,13 @@ func applyDefaults(c *Config) {
 	if c.HASSBaseTopic == "" {
 		c.HASSBaseTopic = DefaultHASSBaseTopic
 	}
-	if c.ChargeActiveValue == 0 {
-		c.ChargeActiveValue = DefaultChargeActiveValue
+	if c.ChargeActiveValue == nil {
+		v := DefaultChargeActiveValue
+		c.ChargeActiveValue = &v
 	}
-	if c.DischargeActiveValue == 0 {
-		c.DischargeActiveValue = DefaultDischargeActiveValue
+	if c.DischargeActiveValue == nil {
+		v := DefaultDischargeActiveValue
+		c.DischargeActiveValue = &v
 	}
 	if c.WebBind == "" {
 		c.WebBind = DefaultWebBind

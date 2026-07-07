@@ -54,11 +54,13 @@ func Validate(c *Config) error {
 	}
 
 	// --- Virtual switches ---
-	if c.ChargeActiveValue < 0 || c.ChargeActiveValue > 2400 {
-		add("CHARGE_ACTIVE_VALUE must be 0..2400 W, got %d", c.ChargeActiveValue)
+	// 1..2400: an explicit 0 is rejected (not silently rewritten to the default)
+	// because a 0 W limit makes the switch a no-op that can never report ON.
+	if v := c.ChargeActiveValue; v != nil && (*v < 1 || *v > 2400) {
+		add("CHARGE_ACTIVE_VALUE must be 1..2400 W (omit the key for the %d default), got %d", DefaultChargeActiveValue, *v)
 	}
-	if c.DischargeActiveValue < 0 || c.DischargeActiveValue > 2400 {
-		add("DISCHARGE_ACTIVE_VALUE must be 0..2400 W, got %d", c.DischargeActiveValue)
+	if v := c.DischargeActiveValue; v != nil && (*v < 1 || *v > 2400) {
+		add("DISCHARGE_ACTIVE_VALUE must be 1..2400 W (omit the key for the %d default), got %d", DefaultDischargeActiveValue, *v)
 	}
 
 	// --- MQTT ---

@@ -104,6 +104,12 @@ func (s *Server) Run(ctx context.Context) error {
 		Addr:              s.cfg.WebBind,
 		Handler:           s.handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		// Without these an established connection lives forever: IdleTimeout=0
+		// keeps idle keep-alives open, WriteTimeout=0 lets a slow reader pin a
+		// handler goroutine. All responses are tiny, so short bounds are safe.
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()

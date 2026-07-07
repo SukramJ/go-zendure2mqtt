@@ -48,12 +48,15 @@ type Coordinator struct {
 	logger *slog.Logger
 
 	runCtx   context.Context //nolint:containedctx // captured for the subscription handler
-	bySN     map[string]source.Device
 	switches []virtual.Switch
+
+	snMu sync.RWMutex // guards bySN (written by onReading, read by handleSet — different goroutines)
+	bySN map[string]source.Device
 
 	discMu      sync.Mutex        // guards lastDiscSig
 	lastDiscSig map[string]string // sn -> signature of the last published config-topic set
 	reconciling sync.Map          // sn -> struct{}; in-flight orphan-reconcile gate, one per device
+	reconcileMu sync.Mutex        // serializes reconcile goroutines: they share one MQTT config filter
 }
 
 // New constructs a Coordinator.
@@ -71,7 +74,7 @@ func New(deps Deps) *Coordinator {
 		root:        deps.Cfg.MQTTTopic,
 		logger:      logger,
 		bySN:        bySN,
-		switches:    virtual.Switches(deps.Cfg.ChargeActiveValue, deps.Cfg.DischargeActiveValue),
+		switches:    virtual.Switches(deps.Cfg.ChargeActiveW(), deps.Cfg.DischargeActiveW()),
 		lastDiscSig: map[string]string{},
 	}
 }
@@ -83,12 +86,40 @@ func (c *Coordinator) Run(ctx context.Context) error {
 
 	setFilter := c.root + "/+/+/+/set"
 	if _, err := c.deps.MQTT.Subscribe(ctx, setFilter, mqtt.QoS0, c.handleSet); err != nil {
+		// A failed initial subscribe is not replayed on later reconnects (the
+		// client rolls back the registration), so without a retry every /set
+		// command would be silently dropped until restart. Retry in the
+		// background until it lands or the daemon stops.
 		c.logger.Warn("coordinator.subscribe_failed", slog.String("filter", setFilter), slog.String("err", err.Error()))
+		go c.retrySubscribe(ctx, setFilter)
 	}
 
 	return c.deps.Backend.Run(ctx, func(r source.Reading) {
 		c.onReading(ctx, r)
 	})
+}
+
+// setSubscribeMaxBackoff caps the /set re-subscribe retry interval.
+const setSubscribeMaxBackoff = 30 * time.Second
+
+// retrySubscribe re-issues the /set subscription with capped backoff until it
+// succeeds or ctx is cancelled. A duplicate success is idempotent (the client
+// replaces the handler in place), and once registered go-mqtt replays it across
+// all later reconnects.
+func (c *Coordinator) retrySubscribe(ctx context.Context, filter string) {
+	backoff := time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		if _, err := c.deps.MQTT.Subscribe(ctx, filter, mqtt.QoS0, c.handleSet); err == nil {
+			c.logger.Info("coordinator.subscribe_recovered", slog.String("filter", filter))
+			return
+		}
+		backoff = min(backoff*2, setSubscribeMaxBackoff)
+	}
 }
 
 // PublishOnline (re)announces bridge availability. Wired to OnConnect.
@@ -111,9 +142,11 @@ func (c *Coordinator) PublishOffline(ctx context.Context) {
 
 // onReading resolves a report and publishes every point (plus discovery).
 func (c *Coordinator) onReading(ctx context.Context, r source.Reading) {
+	c.snMu.Lock()
 	if _, ok := c.bySN[r.Device.SN]; !ok {
 		c.bySN[r.Device.SN] = r.Device // learn devices discovered at runtime (cloud)
 	}
+	c.snMu.Unlock()
 	c.publish(ctx, r.Device, r.Report)
 }
 
@@ -181,6 +214,14 @@ func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published
 	bgCtx := context.WithoutCancel(ctx)
 	go func() {
 		defer c.reconciling.Delete(sn)
+		// Every reconcile subscribes the same shared config filter; concurrent
+		// ones would steal each other's handler and truncate collection (or tear
+		// down the broker subscription mid-window). Serialize them.
+		c.reconcileMu.Lock()
+		defer c.reconcileMu.Unlock()
+		if c.runCtx.Err() != nil {
+			return
+		}
 		filter := c.deps.HASS.ConfigFilter()
 		var mu sync.Mutex
 		retained := map[string][]byte{}
@@ -210,6 +251,10 @@ func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published
 
 		cleared := c.clearOrphanConfigs(bgCtx, orphans)
 		if cleared > 0 {
+			// Invalidate the cleared configs in discovery so a still-live entity
+			// wrongly cleared by a transiently shrunken report is republished on
+			// the next report instead of staying deleted until restart.
+			c.deps.HASS.Forget(orphans)
 			c.logger.Info("coordinator.discovery_orphans_cleared",
 				slog.String("sn", sn), slog.Int("count", cleared))
 		}
@@ -279,7 +324,9 @@ func (c *Coordinator) handleSet(msg *mqtt.Message) {
 		return
 	}
 	sn, leaf := parts[1], parts[3]
+	c.snMu.RLock()
 	dev, ok := c.bySN[sn]
+	c.snMu.RUnlock()
 	if !ok {
 		c.logger.Warn("coordinator.set_unknown_device", slog.String("sn", sn))
 		return
@@ -292,16 +339,26 @@ func (c *Coordinator) handleSet(msg *mqtt.Message) {
 		c.logger.Warn("coordinator.set_not_writable", slog.String("topic", leaf))
 		return
 	}
-	value := decodeCommand(entry, string(msg.Payload))
-	ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
-	defer cancel()
-	if err := c.deps.Backend.Write(ctx, dev, map[string]any{entry.Property: value}); err != nil {
-		c.logger.Warn("coordinator.write_failed",
-			slog.String("sn", sn), slog.String("property", entry.Property), slog.String("err", err.Error()))
+	value, ok := decodeCommand(entry, string(msg.Payload))
+	if !ok {
+		c.logger.Warn("coordinator.set_rejected",
+			slog.String("sn", sn), slog.String("property", entry.Property), slog.String("payload", string(msg.Payload)))
 		return
 	}
-	c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("property", entry.Property))
-	c.reReadSoon(dev)
+	// Write off the read loop: go-mqtt dispatches handlers synchronously, so a
+	// slow/unreachable device would otherwise stall all inbound dispatch and can
+	// trip the keep-alive watchdog.
+	go func() {
+		ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
+		defer cancel()
+		if err := c.deps.Backend.Write(ctx, dev, map[string]any{entry.Property: value}); err != nil {
+			c.logger.Warn("coordinator.write_failed",
+				slog.String("sn", sn), slog.String("property", entry.Property), slog.String("err", err.Error()))
+			return
+		}
+		c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("property", entry.Property))
+		c.reReadSoon(dev)
+	}()
 }
 
 // switchPoints builds synthetic switch points so the virtual switches flow
@@ -333,17 +390,19 @@ func (c *Coordinator) handleSwitchSet(dev source.Device, leaf, payload string) b
 			continue
 		}
 		on := isOn(payload)
-		ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
-		err := c.deps.Backend.Write(ctx, dev, sw.WriteProps(on))
-		cancel()
-		if err != nil {
-			c.logger.Warn("coordinator.switch_write_failed",
-				slog.String("sn", dev.SN), slog.String("switch", leaf), slog.String("err", err.Error()))
-		} else {
+		// Off the read loop — see handleSet.
+		go func() {
+			ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
+			defer cancel()
+			if err := c.deps.Backend.Write(ctx, dev, sw.WriteProps(on)); err != nil {
+				c.logger.Warn("coordinator.switch_write_failed",
+					slog.String("sn", dev.SN), slog.String("switch", leaf), slog.String("err", err.Error()))
+				return
+			}
 			c.logger.Info("coordinator.switch_write",
 				slog.String("sn", dev.SN), slog.String("switch", leaf), slog.Bool("on", on))
 			c.reReadSoon(dev)
-		}
+		}()
 		return true
 	}
 	return false
@@ -360,27 +419,43 @@ func isOn(payload string) bool {
 }
 
 // decodeCommand turns an MQTT payload string into the value the device
-// expects. A select label (English or German) maps back to its integer
-// code. A numeric value is converted to the device's raw units by
-// inverting the catalog's read scaling (read is (raw-offset)/scale, so
-// write is value*scale+offset) and rounding to an integer — Zendure
-// properties are integer-valued. Non-numeric payloads stay strings.
-func decodeCommand(entry catalog.Entry, payload string) any {
+// expects, returning ok=false when the payload must be rejected. A select
+// label (English or German) maps back to its integer code. A numeric value is
+// clamped to the catalog's advertised min/max (HA enforces those only in its
+// own UI, not for other publishers), then converted to the device's raw units
+// by inverting the read scaling (read is (raw-offset)/scale, so write is
+// value*scale+offset) and rounded to an integer — Zendure properties are
+// integer-valued. NaN/Inf and out-of-int64-range values are rejected so garbage
+// never reaches the hardware. Non-numeric, non-label payloads stay strings.
+func decodeCommand(entry catalog.Entry, payload string) (any, bool) {
 	payload = strings.TrimSpace(payload)
 	if code, ok := entry.CodeForLabel(payload); ok {
 		if i, err := strconv.Atoi(code); err == nil {
-			return i
+			return i, true
 		}
-		return code
+		return code, true
 	}
 	if f, err := strconv.ParseFloat(payload, 64); err == nil {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return nil, false
+		}
+		// Bounds are expressed in display units, so clamp before un-scaling.
+		if entry.Min != nil && f < *entry.Min {
+			f = *entry.Min
+		}
+		if entry.Max != nil && f > *entry.Max {
+			f = *entry.Max
+		}
 		if entry.Scale != 0 {
 			f *= entry.Scale
 		}
 		f += entry.Offset
-		return int(math.Round(f))
+		if f < math.MinInt64 || f > math.MaxInt64 {
+			return nil, false
+		}
+		return int(math.Round(f)), true
 	}
-	return payload
+	return payload, true
 }
 
 // formatValue renders a resolved value as an MQTT payload.

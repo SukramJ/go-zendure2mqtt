@@ -69,6 +69,36 @@ func New(token string, tlsVerify bool, logger *slog.Logger) *Backend {
 	}
 }
 
+// maxLoginBackoff caps the login retry backoff. Higher than maxReconnect
+// because a permanently invalid token fails forever, and a tight cap would
+// hammer the cloud API and spam logs.
+const maxLoginBackoff = 5 * time.Minute
+
+// loginWithRetry keeps attempting login until it succeeds or ctx is cancelled,
+// backing off between attempts. A transient boot-time failure (DNS/uplink not
+// yet up, a 5xx) must not idle the backend permanently the way a single attempt
+// would; the MQTT session below already has its own reconnect loop. It returns
+// a non-nil error only when ctx is cancelled before the first success.
+func (b *Backend) loginWithRetry(ctx context.Context) error {
+	backoff := minReconnect
+	for {
+		if err := b.login(ctx); err == nil {
+			return nil
+		} else if ctx.Err() != nil {
+			return ctx.Err()
+		} else {
+			b.logger.Error("cloud.login_failed",
+				slog.String("err", err.Error()), slog.Duration("retry_in", backoff))
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, maxLoginBackoff)
+	}
+}
+
 // login decodes the token and fetches the device list + broker credentials.
 func (b *Backend) login(ctx context.Context) error {
 	apiURL, appKey, err := DecodeToken(b.token)
@@ -111,9 +141,9 @@ func (b *Backend) Run(ctx context.Context, onReading source.Handler) error {
 		<-ctx.Done()
 		return nil
 	}
-	if err := b.login(ctx); err != nil {
-		b.logger.Error("cloud.login_failed", slog.String("err", err.Error()))
-		<-ctx.Done()
+	if err := b.loginWithRetry(ctx); err != nil {
+		// Only ctx cancellation ends the retry loop, so this is a clean shutdown
+		// before the first successful login.
 		return nil
 	}
 	b.onReading = onReading

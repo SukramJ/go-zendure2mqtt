@@ -6,6 +6,7 @@ package discovery
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 )
 
 // TestIngestExtractsService builds a synthetic mDNS response (PTR + SRV +
@@ -87,5 +88,32 @@ func TestParseNameCompression(t *testing.T) {
 	}
 	if next != len(msg) {
 		t.Errorf("next = %d, want %d", next, len(msg))
+	}
+}
+
+// TestParseNameCompressionLoop feeds a malicious packet whose label is followed
+// by a pointer back onto itself, so a naive parser oscillates forever. The hop
+// bound must make parseName return an error instead of hanging. A LAN host can
+// send exactly this shape to the discovery socket.
+func TestParseNameCompressionLoop(t *testing.T) {
+	msg := make([]byte, 17)
+	// [12]=len 2, 'a','b', [15]=pointer 0xC0 back to offset 12, [16]=0x0C.
+	msg[12] = 2
+	msg[13] = 'a'
+	msg[14] = 'b'
+	msg[15] = 0xC0
+	msg[16] = 0x0C
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if _, _, err := parseName(msg, 15); err == nil {
+			t.Error("parseName accepted a self-referential pointer loop, want error")
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("parseName hung on a compression-pointer loop")
 	}
 }

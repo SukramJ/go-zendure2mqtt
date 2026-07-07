@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -117,8 +118,12 @@ func configCandidates(env Env, name string) []string {
 // applyEnvOverrides walks every ZENDURE_<KEY>=value pair and sets
 // raw[KEY] = coerced(value). The raw map is mutated in place.
 //
-// Coercion order: bool → int → float → string.
+// Coercion is per target field type: a value bound for a bool/int/float field
+// is parsed accordingly, while a value bound for a string field (or an unknown
+// key) is stored verbatim. Type-blind coercion would silently corrupt
+// numeric-looking string credentials (e.g. MQTT_PASSWORD=0123 → 123).
 func applyEnvOverrides(raw map[string]any, env Env) {
+	kinds := configFieldKinds()
 	for _, kv := range env.Environ() {
 		eq := strings.IndexByte(kv, '=')
 		if eq < 0 {
@@ -132,25 +137,51 @@ func applyEnvOverrides(raw map[string]any, env Env) {
 		if cfgKey == "" {
 			continue
 		}
-		raw[cfgKey] = coerceEnvValue(val)
+		raw[cfgKey] = coerceEnvValue(val, kinds[cfgKey])
 	}
 }
 
-// coerceEnvValue applies the bool → int → float → string ladder.
-func coerceEnvValue(s string) any {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "true":
-		return true
-	case "false":
-		return false
+// configFieldKinds maps each scalar Config YAML key to its field kind (pointers
+// dereferenced to their element). Composite fields (slices/structs) are omitted
+// — they are not settable via the scalar env-override path.
+func configFieldKinds() map[string]reflect.Kind {
+	t := reflect.TypeOf(Config{})
+	kinds := make(map[string]reflect.Kind, t.NumField())
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag := f.Tag.Get("yaml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name, _, _ := strings.Cut(tag, ",")
+		ft := f.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		kinds[name] = ft.Kind()
 	}
-	// Atoi parses straight into a platform-width int (no int64→int narrowing,
-	// which CodeQL flags as go/incorrect-integer-conversion).
-	if i, err := strconv.Atoi(s); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f
+	return kinds
+}
+
+// coerceEnvValue converts an env string to the type expected by kind. String
+// (and unknown) targets keep the raw value; bool/int/float targets are parsed,
+// falling back to the raw string on a parse error so validation can report it.
+func coerceEnvValue(s string, kind reflect.Kind) any {
+	switch kind {
+	case reflect.Bool:
+		if b, err := strconv.ParseBool(strings.TrimSpace(s)); err == nil {
+			return b
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// Atoi parses straight into a platform-width int (no int64→int narrowing,
+		// which CodeQL flags as go/incorrect-integer-conversion).
+		if i, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+			return i
+		}
+	case reflect.Float32, reflect.Float64:
+		if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+			return f
+		}
 	}
 	return s
 }
