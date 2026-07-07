@@ -1,3 +1,17 @@
+# Version 0.6.1 (2026-07-07)
+
+## What's Changed
+
+Dependency update, no functional changes in this repo.
+
+### Changed
+
+- **go-mqtt v1.1.0 → v1.2.0.** Picks up the upstream hardening release (28
+  adversarially verified fixes across concurrency, decoder robustness, resource
+  limits, and spec conformance). Most relevant here: concurrent
+  `Connect`/`Disconnect` calls are now fully serialised, which benefits the
+  cloud backend's reconnect loop. No API changes; no config changes required.
+
 # Version 0.6.0 (2026-07-07)
 
 ## What's Changed
