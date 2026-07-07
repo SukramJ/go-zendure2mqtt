@@ -5,6 +5,12 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.6.1
+
+- Dependency update: MQTT client library bumped to v1.2.0 (upstream hardening
+  release — more robust reconnect handling, stricter protocol parsing). No
+  add-on option changes; no action required.
+
 ## 0.6.0
 
 - Codebase hardening pass covering untrusted-input parsing, HTTP client/server
