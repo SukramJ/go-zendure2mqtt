@@ -86,6 +86,24 @@ func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *mode
 	return published
 }
 
+// Forget drops the given discovery config topics from the already-sent set so
+// their entities are republished on the next matching point. The coordinator
+// calls this right after clearing retained orphan configs: if a "orphan" was in
+// fact still live (e.g. a transiently shrunken report), the next report restores
+// it instead of leaving it deleted for the rest of the process lifetime.
+func (d *Discovery) Forget(configTopics []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, topic := range configTopics {
+		// configTopic() is <base>/<platform>/<uniqueID>/config; recover the id.
+		parts := strings.Split(topic, "/")
+		if len(parts) < 2 {
+			continue
+		}
+		delete(d.sent, parts[len(parts)-2])
+	}
+}
+
 // uniqueID derives a stable, broker-wide-unique entity id.
 func (d *Discovery) uniqueID(sn string, p process.Point) string {
 	if p.PackSN != "" {

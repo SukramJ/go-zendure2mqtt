@@ -40,6 +40,8 @@ HASS_ENABLE: true
 HASS_BASE_TOPIC: homeassistant
 
 # --- Virtual charge/discharge switches (AC power limit in W written when ON) ---
+# Range 1..2400 W. Omit a key for the 1200 W default; 0 is rejected (it would
+# make the switch a no-op that can never report ON).
 CHARGE_ACTIVE_VALUE: 1200
 DISCHARGE_ACTIVE_VALUE: 1200
 

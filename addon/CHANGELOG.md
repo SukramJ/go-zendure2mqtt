@@ -5,6 +5,25 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.6.0
+
+- Codebase hardening pass covering untrusted-input parsing, HTTP client/server
+  robustness, and concurrency. Highlights: the mDNS discovery parser can no
+  longer be hung by a crafted LAN packet; device/cloud HTTP responses are now
+  size-capped so a misbehaving peer cannot exhaust memory; the diagnostic web
+  UI gained read/write/idle connection timeouts; a fatal map-race in cloud mode
+  is fixed; inbound `/set` writes no longer block the MQTT read loop; and `/set`
+  numeric commands are clamped to their advertised min/max (`NaN`/`Inf` and
+  out-of-range values are rejected instead of reaching the hardware).
+- Transient cloud-login and startup-subscription failures now retry instead of
+  leaving the add-on running but idle until a manual restart.
+- Home Assistant discovery no longer permanently deletes live entities when a
+  device sends a transiently incomplete report.
+- **Breaking (config):** `charge_active_value` / `discharge_active_value` no
+  longer accept `0` (a `0` W limit was a silent no-op that got rewritten to the
+  1200 W default). The valid range is now `1..2400`; leave the option unset for
+  the 1200 W default.
+
 ## 0.4.0
 
 - MQTT publishes to the output broker are now circuit-protected: when the

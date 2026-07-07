@@ -1,3 +1,68 @@
+# Version 0.6.0 (2026-07-07)
+
+## What's Changed
+
+Codebase hardening pass: a multi-agent review found and adversarially verified a
+set of robustness and untrusted-input defects, fixed here. No config changes are
+required, except that `CHARGE_ACTIVE_VALUE` / `DISCHARGE_ACTIVE_VALUE` now reject
+an explicit `0` (see below).
+
+### Security / robustness
+
+- **mDNS parser no longer hangs on a crafted packet.** The hand-written DNS
+  name-compression decoder (`zendure2mqtt-util discover`) followed backward
+  pointers with a guard that a self-referential pointer could defeat, spinning
+  the CPU and allocating without bound. Pointer indirections are now capped, so
+  a malicious LAN response yields a parse error instead of a hang.
+- **Device and cloud HTTP responses are size-capped.** `FetchReport` (local,
+  unauthenticated plain HTTP) and the cloud login response were read with an
+  unbounded `io.ReadAll`; a malfunctioning or hostile peer could stream
+  gigabytes and OOM the daemon. Both now read through a `LimitReader` (4 MiB /
+  1 MiB) and error on overflow.
+- **Diagnostic web server got read/write/idle timeouts.** Only
+  `ReadHeaderTimeout` was set, so an idle keep-alive or slow reader could pin a
+  connection indefinitely (fd exhaustion). `ReadTimeout`, `WriteTimeout` and
+  `IdleTimeout` are now set.
+- **Device-supplied topic segments are sanitized.** Unmapped property keys and
+  battery-pack serials flowed verbatim into MQTT topics; a key or serial with
+  `/`, `+` or `#` produced protocol-violating publishes that counted against the
+  output circuit breaker and could mute the whole bridge. Segments are now
+  neutralized and implausible pack serials dropped (which also bounds the
+  otherwise-unbounded set of discovery sub-devices a rogue device could mint).
+
+### Fixed
+
+- **Fatal map-race in cloud mode.** `bySN` was read by the command handler while
+  the telemetry goroutine wrote it, which the Go runtime turns into a fatal
+  `concurrent map read and map write`. It is now guarded by an `RWMutex`.
+- **Inbound writes no longer block the MQTT read loop.** A slow or unreachable
+  device could stall all inbound command dispatch (and trip the keep-alive
+  watchdog) because backend writes ran synchronously in the handler. Writes are
+  now performed off the read loop.
+- **`/set` command payloads are validated.** `NaN`, `Inf` and out-of-range
+  values were converted to garbage `int64` and written to the hardware,
+  bypassing the catalog's advertised min/max. Numeric commands are now clamped
+  to the catalog bounds and non-finite values rejected.
+- **Transient cloud-login failure now retries** with backoff instead of idling
+  the backend permanently until a manual restart.
+- **Failed startup `/set` subscription now retries** in the background; a drop
+  in the connect/subscribe window no longer silently disables all commands until
+  restart.
+- **Orphan-reconcile no longer permanently deletes live entities.** A
+  transiently shrunken report could clear still-live discovery configs that were
+  then never republished; cleared configs are now forgotten from the sent-cache
+  so the next report restores them. Concurrent per-device reconciles are also
+  serialized so they no longer truncate each other's collection.
+- **Type-blind env coercion corrupted string credentials.** A numeric-looking
+  `ZENDURE_MQTT_PASSWORD`/`WEB_PASSWORD` (e.g. `0123456`, `1e5`) was silently
+  rewritten. Env values are now coerced per target field type.
+- **Catalog load rejects duplicate properties/topic leaves and unknown
+  platforms** instead of silently last-winning (which could misroute a write to
+  the wrong device property).
+- **`CHARGE_ACTIVE_VALUE` / `DISCHARGE_ACTIVE_VALUE` reject an explicit `0`.**
+  A `0` was silently rewritten to the 1200 W default (opposite of intent); the
+  valid range is now `1..2400` and omitting the key still takes the default.
+
 # Version 0.5.1 (2026-07-06)
 
 ## What's Changed

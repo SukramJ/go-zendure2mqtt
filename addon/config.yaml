@@ -3,7 +3,7 @@
 # version MUST equal the published image tag (ghcr.io/sukramj/go-zendure2mqtt-addon-{arch})
 # and is bumped in the release commit that cuts the matching git tag.
 name: go-zendure2mqtt
-version: "0.5.1"
+version: "0.6.0"
 slug: go-zendure2mqtt
 description: >-
   Bridges Zendure devices (e.g. SolarFlow 2400 AC) to MQTT with Home Assistant
@@ -81,6 +81,6 @@ schema:
   hass_enable: bool
   language: "list(en|de)"
   web_enable: bool
-  charge_active_value: int(0,2400)
-  discharge_active_value: int(0,2400)
+  charge_active_value: int(1,2400)
+  discharge_active_value: int(1,2400)
   debug: bool

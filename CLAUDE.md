@@ -150,5 +150,7 @@ compression), `web` (handlers + basic auth). MQTT-client tests live in the share
 Bump the version in **four** places in one commit: `internal/version/version.go` (`Version`
 default), `addon/config.yaml` (`version`), `addon/Dockerfile` (`BUILD_VERSION`), and add a
 `# Version X.Y.Z (YYYY-MM-DD)` section at the top of `changelog.md` (extracted by
-`script/extract-release-notes.sh`). Branch → PR → squash-merge → tag **`vX.Y.Z`** (the `v`
-triggers `release-on-tag.yml`, `docker-build-push.yml`, `addon-image.yml`).
+`script/extract-release-notes.sh`). **Also** add a matching `## X.Y.Z` entry to the
+Home Assistant add-on changelog `addon/CHANGELOG.md` (user-facing, HA-oriented summary;
+call out any breaking add-on-option changes). Branch → PR → squash-merge → tag **`vX.Y.Z`**
+(the `v` triggers `release-on-tag.yml`, `docker-build-push.yml`, `addon-image.yml`).

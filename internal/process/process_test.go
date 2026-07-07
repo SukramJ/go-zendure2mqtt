@@ -136,3 +136,38 @@ func TestStateAndCommandTopics(t *testing.T) {
 		t.Errorf("pack StateTopic = %q", got)
 	}
 }
+
+// TestResolveSanitizesHostileTopicSegments checks that a device-supplied
+// unmapped property key with MQTT wildcards/levels is neutralized, and that a
+// battery pack with an implausible serial is dropped entirely.
+func TestResolveSanitizesHostileTopicSegments(t *testing.T) {
+	cat := loadCatalog(t)
+	rep := &model.Report{
+		Properties: map[string]any{"evil/#key": float64(1)},
+		PackData: []map[string]any{
+			{"sn": "PACK1", "socLevel": float64(80)},
+			{"sn": "bad/sn+#", "socLevel": float64(50)},
+			{"sn": "", "socLevel": float64(50)},
+		},
+	}
+	points := process.Resolve(rep, cat, "en")
+
+	for _, p := range points {
+		if strings.ContainsAny(p.Topic, "/+#") {
+			t.Errorf("point topic %q still contains an MQTT wildcard/level", p.Topic)
+		}
+		if strings.ContainsAny(p.PackSN, "/+#") {
+			t.Errorf("pack SN %q still contains an MQTT wildcard/level", p.PackSN)
+		}
+	}
+	// The valid pack survives; the two malformed ones are dropped.
+	packs := 0
+	for _, p := range points {
+		if p.PackSN != "" {
+			packs++
+		}
+	}
+	if packs != 1 {
+		t.Errorf("battery points = %d, want 1 (malformed pack serials dropped)", packs)
+	}
+}

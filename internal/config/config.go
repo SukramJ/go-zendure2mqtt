@@ -87,9 +87,11 @@ type Config struct {
 
 	// --- Virtual charge/discharge switches ---
 	// ChargeActiveValue / DischargeActiveValue are the AC power limits (W)
-	// written when the corresponding virtual switch is turned on.
-	ChargeActiveValue    int `yaml:"CHARGE_ACTIVE_VALUE"`
-	DischargeActiveValue int `yaml:"DISCHARGE_ACTIVE_VALUE"`
+	// written when the corresponding virtual switch is turned on. Pointers so
+	// an explicit 0 (an invalid no-op limit) is distinguishable from "unset"
+	// (which takes the 1200 W default) instead of both collapsing to zero.
+	ChargeActiveValue    *int `yaml:"CHARGE_ACTIVE_VALUE"`
+	DischargeActiveValue *int `yaml:"DISCHARGE_ACTIVE_VALUE"`
 
 	// --- Diagnostic web UI (optional; milestone M2) ---
 	WebEnable   bool   `yaml:"WEB_ENABLE"`
@@ -115,4 +117,20 @@ func (c *Config) CloudConfigured() bool { return c.CloudAppToken != "" }
 // RefreshDuration returns the local poll interval as a duration.
 func (c *Config) RefreshDuration() time.Duration {
 	return time.Duration(c.Refresh) * time.Second
+}
+
+// ChargeActiveW returns the charge power limit (W), or the default when unset.
+func (c *Config) ChargeActiveW() int {
+	if c.ChargeActiveValue == nil {
+		return DefaultChargeActiveValue
+	}
+	return *c.ChargeActiveValue
+}
+
+// DischargeActiveW returns the discharge power limit (W), or the default when unset.
+func (c *Config) DischargeActiveW() int {
+	if c.DischargeActiveValue == nil {
+		return DefaultDischargeActiveValue
+	}
+	return *c.DischargeActiveValue
 }

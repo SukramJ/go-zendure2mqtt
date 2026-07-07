@@ -201,6 +201,11 @@ func parseName(msg []byte, off int) (name string, next int, err error) {
 	var parts []string
 	next = -1
 	pos := off
+	// A backward pointer can still form a loop: after jumping earlier, label
+	// consumption can walk pos forward to the pointer byte again, re-firing the
+	// same jump (pos oscillates, parts grows without bound). Bound the number of
+	// pointer indirections — one legitimate name follows at most len(msg) of them.
+	hops := 0
 	for {
 		if pos < 0 || pos >= len(msg) {
 			return "", 0, errors.New("discovery: name out of bounds")
@@ -216,6 +221,10 @@ func parseName(msg []byte, off int) (name string, next int, err error) {
 		case b&0xC0 == 0xC0:
 			if pos+1 >= len(msg) {
 				return "", 0, errors.New("discovery: truncated pointer")
+			}
+			hops++
+			if hops > len(msg) {
+				return "", 0, errors.New("discovery: compression pointer loop")
 			}
 			ptr := int(b&0x3F)<<8 | int(msg[pos+1])
 			if next < 0 {

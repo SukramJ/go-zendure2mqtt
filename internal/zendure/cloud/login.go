@@ -35,6 +35,12 @@ const (
 	clientID = "zenHa"
 )
 
+// maxLoginBody caps the cloud login response. The real {mqtt, deviceList}
+// envelope is a few KB; the client Timeout bounds duration but not bytes, so
+// this prevents an unbounded in-memory read from a hostile or misdirected
+// endpoint (the token-derived api_url scheme is operator-supplied).
+const maxLoginBody = 1 << 20 // 1 MiB
+
 // MQTTCredentials are the cloud broker connection parameters returned by
 // the login. Url has the form "host:port".
 type MQTTCredentials struct {
@@ -138,9 +144,12 @@ func Login(ctx context.Context, hc *http.Client, apiURL, appKey string) (*LoginR
 		return nil, fmt.Errorf("cloud: POST %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxLoginBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("cloud: read body: %w", err)
+	}
+	if len(raw) > maxLoginBody {
+		return nil, fmt.Errorf("cloud: POST %s: response exceeds %d bytes", url, maxLoginBody)
 	}
 
 	var envelope struct {

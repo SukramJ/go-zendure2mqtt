@@ -9,10 +9,17 @@ package process
 
 import (
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
+
+// maxPackSNLen bounds a device-supplied battery pack serial. A pack SN seeds
+// its own MQTT topic level and HA sub-device, so an implausibly long or
+// malformed one is dropped rather than published.
+const maxPackSNLen = 64
 
 // Group names used when the catalog does not classify a property.
 const (
@@ -54,19 +61,22 @@ func Resolve(rep *model.Report, cat *catalog.Catalog, lang string) []Point {
 			})
 			continue
 		}
-		points = append(points, Point{Group: GroupMisc, Topic: key, Value: raw})
+		points = append(points, Point{Group: GroupMisc, Topic: sanitizeSegment(key), Value: raw})
 	}
 
 	// packData[] → per-pack sub-entities under the battery group.
 	for _, pack := range rep.PackData {
-		packSN, _ := pack["sn"].(string)
+		packSN, ok := pack["sn"].(string)
+		if !ok || !validPackSN(packSN) {
+			continue // implausible/malformed serial — would corrupt topics and leak sub-devices
+		}
 		for key, raw := range pack {
 			if key == "sn" {
 				continue
 			}
 			value := raw
 			var entryPtr *catalog.Entry
-			topic := key
+			topic := sanitizeSegment(key)
 			if entry, ok := cat.ByProperty(key); ok {
 				e := entry
 				value = applyEntry(e, raw, lang)
@@ -84,6 +94,51 @@ func Resolve(rep *model.Report, cat *catalog.Catalog, lang string) []Point {
 	}
 
 	return points
+}
+
+// sanitizeSegment makes a device-supplied string safe as an MQTT topic level:
+// characters that would inject a level ('/') or a wildcard ('+', '#'), plus
+// NUL and invalid UTF-8, are replaced with '_'. An MQTT PUBLISH to a wildcard
+// or non-UTF-8 topic is a protocol violation the broker (and go-mqtt's own
+// validation) rejects, and a rejected publish would count against the output
+// circuit breaker — one hostile report could otherwise mute the whole bridge.
+func sanitizeSegment(s string) string {
+	if s == "" {
+		return "_"
+	}
+	if !strings.ContainsAny(s, "/+#\x00") && utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r == '/' || r == '+' || r == '#' || r == 0 || r == utf8.RuneError:
+			b.WriteByte('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// validPackSN reports whether a device-supplied battery pack serial is
+// plausible: non-empty, within a sane length, and limited to characters that
+// are safe in an MQTT topic level and an HA unique_id. Rejecting outliers
+// bounds the otherwise-unbounded set of pack sub-devices a rogue device could
+// mint (each new serial permanently grows discovery state and retained topics).
+func validPackSN(sn string) bool {
+	if sn == "" || len(sn) > maxPackSNLen {
+		return false
+	}
+	for _, r := range sn {
+		switch {
+		case r >= 'A' && r <= 'Z', r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // groupOrDefault returns g, or fallback when g is empty.

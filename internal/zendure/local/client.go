@@ -22,6 +22,12 @@ import (
 // DefaultHTTPTimeout bounds a single request to a device.
 const DefaultHTTPTimeout = 10 * time.Second
 
+// maxBodyBytes caps a device HTTP response. Real reports are a few KB; the
+// client Timeout bounds duration but not bytes, so without this a malfunctioning
+// or spoofed LAN peer (the transport is unauthenticated plain HTTP) could stream
+// gigabytes into memory and OOM the daemon.
+const maxBodyBytes = 4 << 20 // 4 MiB
+
 // FetchReport performs GET http://<host>/properties/report and parses it.
 func FetchReport(ctx context.Context, hc *http.Client, host string) (*model.Report, error) {
 	url := fmt.Sprintf("http://%s/properties/report", host)
@@ -34,9 +40,12 @@ func FetchReport(ctx context.Context, hc *http.Client, host string) (*model.Repo
 		return nil, fmt.Errorf("local: GET %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("local: read body: %w", err)
+	}
+	if len(body) > maxBodyBytes {
+		return nil, fmt.Errorf("local: GET %s: response exceeds %d bytes", url, maxBodyBytes)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("local: GET %s: status %d", url, resp.StatusCode)
@@ -62,7 +71,7 @@ func WriteProperties(ctx context.Context, hc *http.Client, host, sn string, prop
 		return fmt.Errorf("local: POST %s: %w", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxBodyBytes))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("local: POST %s: status %d", url, resp.StatusCode)
 	}
