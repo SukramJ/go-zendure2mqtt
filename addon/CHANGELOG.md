@@ -5,6 +5,15 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.7.0
+
+- Dependency update: MQTT client library bumped to v1.3.0 (upstream audit
+  release — 42 fixes across concurrency, decoder robustness, and spec
+  conformance). The output broker's reconnect now waits briefly before
+  retrying if the connection drops right after connecting, instead of
+  hammering the broker immediately. No add-on option changes; no action
+  required.
+
 ## 0.6.1
 
 - Dependency update: MQTT client library bumped to v1.2.0 (upstream hardening
