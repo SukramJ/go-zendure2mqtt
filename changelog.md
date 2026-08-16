@@ -1,3 +1,41 @@
+# Version 0.7.0 (2026-08-16)
+
+## What's Changed
+
+Dependency update, no functional changes in this repo's own code.
+
+### Changed
+
+- **go-mqtt v1.2.0 → v1.3.0.** Picks up the upstream audit release (42
+  adversarially verified findings — 3 high, 7 medium, 32 low — across
+  concurrency, decoder robustness, resource limits, and spec
+  conformance). Exported API changes are purely additive; no code
+  changes were needed here to build against it.
+- **Reconnect flap damping is now the default.** The output broker's
+  `Lifecycle` (`cmd/zendure2mqtt/main.go`, built with just a `Logger`
+  set) picks up `LifecycleConfig.FlapWindow`'s new 10s default: if the
+  link dies within 10s of coming up, the reconnect now backs off
+  exponentially instead of redialling immediately, damping a flapping
+  broker instead of hammering it at full speed. A one-off drop still
+  reconnects promptly via the existing event-driven path. Left at the
+  library default — appropriate for this bridge, not set explicitly.
+- **Output circuit breaker no longer trips on client-side validation
+  errors.** `mqtt.Breaker` (wraps the output client in `main.go`) used
+  to count a rejected malformed publish (bad topic, oversized string,
+  ...) as a broker-side failure; that could open the circuit and mute
+  otherwise-healthy publishes. Complements the 0.6.0 hardening in this
+  repo that sanitizes device-supplied topic segments before they reach
+  MQTT.
+- **No more spurious reconnect after an intentional `Disconnect`.**
+  Benefits the cloud backend's own hand-rolled `connectLoop`
+  (`internal/zendure/cloud/source.go`), which calls `client.Disconnect`
+  itself on shutdown.
+
+Not applicable to this bridge: the QoS 2 unknown-identifier recovery
+fix and the new `$share/...` delivery support (every publish/subscribe
+here is QoS 0 and uses plain filters, no shared subscriptions), and the
+stricter inbound frame validation (transparent to callers).
+
 # Version 0.6.1 (2026-07-07)
 
 ## What's Changed
