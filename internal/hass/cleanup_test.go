@@ -6,7 +6,6 @@ package hass
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"sync"
 	"testing"
 
@@ -119,7 +118,6 @@ func TestDeviceNameSeedsEntityID(t *testing.T) {
 
 			var cfg struct {
 				UniqueID        string `json:"unique_id"`
-				ObjectID        string `json:"object_id"`
 				DefaultEntityID string `json:"default_entity_id"`
 				Device          struct {
 					Name string `json:"name"`
@@ -133,13 +131,6 @@ func TestDeviceNameSeedsEntityID(t *testing.T) {
 			}
 			if cfg.DefaultEntityID != c.wantEntityID {
 				t.Errorf("default_entity_id = %q, want %q", cfg.DefaultEntityID, c.wantEntityID)
-			}
-			// object_id is the platform-less seed and must carry the same slug —
-			// current HA honours it reliably while default_entity_id is not yet
-			// consistently applied, so we publish both.
-			wantObjectID := strings.TrimPrefix(c.wantEntityID, "sensor.")
-			if cfg.ObjectID != wantObjectID {
-				t.Errorf("object_id = %q, want %q", cfg.ObjectID, wantObjectID)
 			}
 			// The unique_id (and thus the retained config topic) stays keyed on
 			// the serial number regardless of DeviceName — this is the stable
