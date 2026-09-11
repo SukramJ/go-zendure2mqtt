@@ -1,3 +1,18 @@
+# Unreleased
+
+## What's Changed
+
+### Changed
+
+- **Dropped the dead `object_id` key from HA discovery payloads.** Home
+  Assistant's MQTT discovery schemas are `extra=REMOVE_EXTRA`; measured against
+  the schemas of HA 2026.9, `object_id` is accepted by 0 of 32 MQTT platforms
+  (`default_entity_id` by 28), so it was being silently dropped on arrival.
+  The payload already carried `default_entity_id` with the same seed at every
+  site, so this is a pure deletion with no user-visible effect: entity ids are
+  unchanged, retained configs just get smaller and stop advertising a key that
+  no longer does anything.
+
 # Version 0.7.0 (2026-08-16)
 
 ## What's Changed
