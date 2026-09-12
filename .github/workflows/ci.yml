@@ -1,10 +1,14 @@
 # GitHub Actions CI for go-zendure2mqtt.
 #
-# Three jobs: lint (go vet + gofumpt + golangci-lint), test (matrix
-# across the OS triplet the daemon supports — race detector on, so CGo
-# enabled for this single step), build (sanity-check that the binary
-# produces a version banner). Concurrency cancels stale runs on the same
-# ref so a fast-pushing developer isn't billed for outdated commits.
+# Jobs: lint (go vet + gofumpt + golangci-lint + go.mod tidiness),
+# security (govulncheck + go-licenses + gitleaks — this repo ships release
+# archives and a Docker image, so a vulnerable or copyleft dependency is an
+# exposure in a distributed artifact), test (matrix across the OS triplet
+# the daemon supports — race detector on, so CGo enabled for this single
+# step), coverage (per-package floor), fuzz-smoke (bounded run per Fuzz
+# target), build (sanity-check that both binaries link and produce a version
+# banner). Concurrency cancels stale runs on the same ref so a fast-pushing
+# developer isn't billed for outdated commits.
 name: ci
 
 on:
@@ -35,6 +39,16 @@ env:
   # than the one golangci-lint bundles, so both pins matter independently.
   GOFUMPT_VERSION: "v0.12.0"
   GOLANGCI_LINT_VERSION: "v2.13.2"
+  # The security tools are pinned for the same reason, with one difference
+  # worth stating: pinning these binaries does not freeze the answer they
+  # give. govulncheck resolves the vulnerability database at run time and
+  # go-licenses classifies whatever a dependency actually ships, so a newly
+  # published advisory or a relicensed dependency still turns this job red
+  # without a commit here — which is exactly what it is for. The pin only
+  # removes the *other* source of red: a tool release changing its own
+  # reachability analysis or license classifier under an unrelated PR.
+  GOVULNCHECK_VERSION: "v1.8.0"
+  GOLICENSES_VERSION: "v1.6.0"
 
 jobs:
   lint:
@@ -68,6 +82,32 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
           golangci-lint config verify
           golangci-lint run --timeout=5m ./...
+
+  # This repo is not a library: `make release` stages cross-compiled tarballs
+  # and the Dockerfile ships an image, so every dependency it links is
+  # redistributed. That makes both of these gates about a shipped artifact
+  # rather than about style — `make licenses` forbids GPL/AGPL/LGPL
+  # (restricted) and MPL (reciprocal) against an MIT source tree, and
+  # govulncheck's reachability analysis fails only when a known
+  # vulnerability sits on a path this code actually calls. Both targets
+  # already existed in the Makefile and ran in no job.
+  security:
+    name: security (vuln + licenses)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+          make vuln
+      - name: go-licenses
+        run: |
+          go install github.com/google/go-licenses@${{ env.GOLICENSES_VERSION }}
+          make licenses
 
   test:
     name: test (${{ matrix.os }})

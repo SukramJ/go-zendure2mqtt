@@ -51,23 +51,34 @@ RELEASE_PAYLOAD  := zendure.yaml config-template.yaml README.md LICENSE changelo
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# Lint tool versions, pinned to match .github/workflows/ci.yml's lint job.
-# `make check` is only a usable gate if it reports what CI reports, so these
-# two lists must be bumped together — raise both, run `make check`, and fix
-# or justify whatever the new release finds in the same change. goimports,
-# govulncheck and go-licenses stay on @latest: goimports has no gate of its
-# own (gofumpt is the formatting authority), and a new vulnerability or
-# license database SHOULD change the answer without a commit.
+# Tool versions, pinned to match .github/workflows/ci.yml. A local gate is
+# only usable if it reports what CI reports, so these two lists must be
+# bumped together — raise both, run `make check`, and fix or justify
+# whatever the new release finds in the same change.
+#
+# govulncheck and go-licenses are pinned too, now that CI's security job
+# gates them. Pinning the binary does not freeze the answer: govulncheck
+# resolves the vulnerability database at run time and go-licenses classifies
+# whatever a dependency actually ships, so a newly published advisory or a
+# relicensed dependency still turns the gate red without a commit here —
+# which is the point. What the pin removes is the other source of red: a
+# tool release changing its own reachability analysis or license classifier
+# under an unrelated PR.
+#
+# goimports stays on @latest deliberately: it has no gate of its own,
+# gofumpt is the formatting authority.
 GOFUMPT_VERSION       ?= v0.12.0
 GOLANGCI_LINT_VERSION ?= v2.13.2
+GOVULNCHECK_VERSION   ?= v1.8.0
+GOLICENSES_VERSION    ?= v1.6.0
 
 .PHONY: setup
 setup: hooks ## install developer tooling (gofumpt, goimports, golangci-lint, govulncheck, go-licenses) + git hooks
 	$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 	$(GO) install golang.org/x/tools/cmd/goimports@latest
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	$(GO) install github.com/google/go-licenses@latest
+	$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	$(GO) install github.com/google/go-licenses@$(GOLICENSES_VERSION)
 
 .PHONY: hooks
 hooks: ## point git at the tracked hooks in .githooks/ (blocks direct commits on main)
