@@ -182,6 +182,12 @@ func coerceEnvValue(s string, kind reflect.Kind) any {
 		if f, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
 			return f
 		}
+	default:
+		// Every other kind — reflect.String, the unsigned and complex
+		// families, and the composite kinds configFieldKinds never records —
+		// keeps the raw string. This switch is deliberately open: a new scalar
+		// Config field of an unhandled kind must degrade to the raw value so
+		// Validate can report it, not fail to compile a lint gate.
 	}
 	return s
 }

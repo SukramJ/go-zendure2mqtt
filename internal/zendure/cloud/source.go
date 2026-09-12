@@ -82,14 +82,15 @@ const maxLoginBackoff = 5 * time.Minute
 func (b *Backend) loginWithRetry(ctx context.Context) error {
 	backoff := minReconnect
 	for {
-		if err := b.login(ctx); err == nil {
+		err := b.login(ctx)
+		if err == nil {
 			return nil
-		} else if ctx.Err() != nil {
-			return ctx.Err()
-		} else {
-			b.logger.Error("cloud.login_failed",
-				slog.String("err", err.Error()), slog.Duration("retry_in", backoff))
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		b.logger.Error("cloud.login_failed",
+			slog.String("err", err.Error()), slog.Duration("retry_in", backoff))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -143,8 +144,12 @@ func (b *Backend) Run(ctx context.Context, onReading source.Handler) error {
 	}
 	if err := b.loginWithRetry(ctx); err != nil {
 		// Only ctx cancellation ends the retry loop, so this is a clean shutdown
-		// before the first successful login.
-		return nil
+		// before the first successful login. Every Run in this daemon returns
+		// nil on a cancelled context (local.Backend, web.Server, and the
+		// token-missing branch above): Run's error reaches errgroup and then
+		// main's exit code, so surfacing ctx.Err() here would make an ordinary
+		// SIGTERM exit non-zero.
+		return nil //nolint:nilerr // ctx cancellation is a clean shutdown, not a failure; see above
 	}
 	b.onReading = onReading
 
