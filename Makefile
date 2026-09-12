@@ -224,7 +224,7 @@ licenses: ## fail on copyleft dependency licenses (GPL/AGPL/LGPL forbidden; MPL 
 # committed once and reverted in the next commit is still in the history and
 # still a secret — and this daemon handles a Zendure cloud app token plus
 # MQTT credentials. Deliberately configless: the default ruleset is clean
-# over all 57 commits, so there is no allowlist to hide behind. The first
+# over the whole history, so there is no allowlist to hide behind. The first
 # fixture that trips a rule gets a .gitleaks.toml entry with a reason,
 # rather than being pre-exempted by a blanket testdata/docs carve-out.
 .PHONY: secrets

@@ -83,6 +83,55 @@
 
 ### Changed
 
+- **Five CI gates added; every one green on `main` when it landed.** PR #40
+  made `golangci-lint` a gate and, in passing, enumerated the gates this
+  repo was missing. These are those, each in its own commit.
+
+  Two are not hygiene. **`make vuln` and `make licenses` existed in the
+  Makefile and ran in no job** — and this repo stages cross-compiled release
+  archives and ships a Docker image, so every dependency it links is
+  redistributed: `make licenses` forbidding GPL/AGPL/LGPL/MPL against an MIT
+  tree is a statement about a published artifact, and a known-vulnerable
+  dependency reaching a shipped binary had nothing reporting it. Both now
+  run in a `security` job. And **there was no `go mod tidy` / `go.sum`
+  verification gate**, which is immediately relevant rather than
+  theoretical: the ADR 0070 phase 5 migration ahead is a series of
+  `go-hamqtt` version bumps, and a bump is exactly what leaves go.mod drift.
+  The new `make tidy-check` found drift immediately: when this branch was
+  cut, `go.sum` still carried both hashes for `go-mqtt` v1.3.0 after the
+  bump to v1.4.0. That has since been cleared upstream by #41's own tidy, so
+  no dependency version moves here — the gate is what stops it recurring
+  across the bumps still to come.
+
+  Also added: **`gitleaks`** in git mode over the full history (a secret
+  committed once and reverted is still in the history and still a secret,
+  and this daemon handles a cloud app token plus MQTT credentials);
+  deliberately configless, because the default ruleset is clean over the whole
+  history and an allowlist added before anything tripped a rule would only
+  pre-exempt future findings. **A per-package coverage floor**
+  (`make cover-check`, `COVER_MIN=25`), per package rather than on a merged
+  total so one well-tested package cannot hide a package nothing executes,
+  with the eight packages below the floor pinned at their current numbers —
+  a ratchet, not an aspiration. Six of those eight have no test file at all. And **`make fuzz-smoke`** over three new
+  `./internal/process` targets, covering the parsing that turns
+  device-supplied strings into topic levels and `unique_id`s.
+
+  Every tool is pinned in the workflow *and* in `make setup`, so the local
+  and CI gates cannot drift: `govulncheck` v1.8.0, `go-licenses` v1.6.0,
+  `gitleaks` v8.30.1, alongside PR #40's `gofumpt` v0.12.0 and
+  `golangci-lint` v2.13.2.
+
+  Nothing about the daemon changes. The four pinned discovery payloads are
+  untouched, including the two rows that pin defects.
+
+  Reported and deliberately not fixed: nothing bounds the length of a
+  device-supplied property name. `validPackSN` caps a battery serial at 64
+  bytes, but `sanitizeSegment` passes a name of any length through, so a
+  property name longer than MQTT's 65535-byte topic limit produces exactly
+  the rejected PUBLISH that function exists to prevent. The fuzz target
+  documents the carve-out rather than asserting it, so the gate reports on
+  the parsing instead of re-reporting the known gap on every run.
+
 - **`golangci-lint` is now a CI gate, and the four findings it had been
   reporting on `main` are fixed.** The `lint` job ran `go vet` plus
   `gofumpt -l` only, so the `.golangci.yaml` in the repo was enforced
