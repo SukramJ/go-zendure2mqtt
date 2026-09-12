@@ -31,6 +31,46 @@
 
 ### Changed
 
+- **`golangci-lint` is now a CI gate, and the four findings it had been
+  reporting on `main` are fixed.** The `lint` job ran `go vet` plus
+  `gofumpt -l` only, so the `.golangci.yaml` in the repo was enforced
+  nowhere but on a developer's own machine — where it already failed:
+  `exhaustive` in `internal/config/load.go`, `nilerr` and `revive` in
+  `internal/zendure/cloud/source.go`, and `staticcheck` in
+  `internal/process/process.go`. A local gate that is already red is worse
+  than no gate, because the next person to run `make check` cannot tell
+  their own finding from the four that were already there.
+
+  Both lint tools are now pinned by version — `gofumpt v0.12.0` and
+  `golangci-lint v2.13.2` — in the workflow *and* in `make setup`, so a
+  local run reports what CI reports and an unrelated upstream release
+  cannot turn someone else's PR red. No published byte moves: the four
+  discovery and state-topic goldens are unchanged.
+
+### Fixed
+
+- **`coerceEnvValue`'s kind switch states its open set explicitly**
+  (`internal/config/load.go`). It handles bool, the signed ints and the
+  floats, and every other `reflect.Kind` keeps the raw string so `Validate`
+  can report it — which its doc comment already promised. An explicit
+  `default` says that; enumerating the 19 remaining kinds would have
+  claimed the opposite. No behaviour change.
+
+- **The cloud backend's nil return on a cancelled login retry is now
+  annotated, not silent** (`internal/zendure/cloud/source.go`).
+  `loginWithRetry` only ever returns `ctx.Err()`, so `Run` returning `nil`
+  there is a clean shutdown, consistent with every other `Run` in the
+  daemon; propagating the error would have made an ordinary SIGTERM exit
+  non-zero. The retry loop's `if`/`else-if`/`else` is also flattened, which
+  makes that single non-nil exit visible on the page.
+
+- **`sanitizeSegment` uses a tagged switch** (`internal/process/process.go`)
+  instead of five `||`-chained equality tests in one case. Pure form change
+  — same constants, same default — and the pinned goldens prove it, since
+  this function feeds published topic levels and `unique_id`s.
+
+### Changed
+
 - **go-mqtt v1.3.0 → v1.4.0, and the hand-rolled split client is gone.**
   v1.4.0 is purely additive — it adds `SplitClient(Publisher, Subscriber)`
   and `ConnectWithRetry`, and changes no behaviour — and `SplitClient` is

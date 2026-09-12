@@ -1,10 +1,10 @@
 # GitHub Actions CI for go-zendure2mqtt.
 #
-# Three jobs: lint (gofumpt + go vet), test (matrix across the OS
-# triplet the daemon supports — race detector on, so CGo enabled for
-# this single step), build (sanity-check that the binary produces a
-# version banner). Concurrency cancels stale runs on the same ref so
-# a fast-pushing developer isn't billed for outdated commits.
+# Three jobs: lint (go vet + gofumpt + golangci-lint), test (matrix
+# across the OS triplet the daemon supports — race detector on, so CGo
+# enabled for this single step), build (sanity-check that the binary
+# produces a version banner). Concurrency cancels stale runs on the same
+# ref so a fast-pushing developer isn't billed for outdated commits.
 name: ci
 
 on:
@@ -23,6 +23,18 @@ concurrency:
 env:
   CGO_ENABLED: "0"
   GO_VERSION: "1.26"
+  # The lint tools are pinned, not @latest. Dependabot tracks go.mod
+  # requires, not go-install lines in a workflow, so these are bumped by
+  # hand — deliberately: raise the version, run `make check`, and fix or
+  # justify whatever the new release finds in the same change. Floating on
+  # @latest makes this gate report on the calendar rather than on the diff,
+  # and turns an unrelated upstream release into a red CI on someone else's
+  # PR. Keep these in step with the versions `make setup` installs.
+  #
+  # Note the gofumpt step runs the standalone formatter, which is stricter
+  # than the one golangci-lint bundles, so both pins matter independently.
+  GOFUMPT_VERSION: "v0.12.0"
+  GOLANGCI_LINT_VERSION: "v2.13.2"
 
 jobs:
   lint:
@@ -38,13 +50,24 @@ jobs:
         run: go vet ./...
       - name: gofumpt
         run: |
-          go install mvdan.cc/gofumpt@latest
+          go install mvdan.cc/gofumpt@${{ env.GOFUMPT_VERSION }}
           diff=$(gofumpt -l .)
           if [ -n "$diff" ]; then
             echo "::error::gofumpt would rewrite:"
             echo "$diff"
             exit 1
           fi
+      # Install golangci-lint v2 from source with the Go toolchain set up
+      # above. The prebuilt binary ships built with an older Go and refuses
+      # to run against a module targeting a newer one, and
+      # golangci-lint-action@v6 installs a v1 binary that rejects this
+      # repo's v2 config (the version/formatters/linters.default keys). A
+      # direct `go install` of the /v2/ module avoids both problems.
+      - name: golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${{ env.GOLANGCI_LINT_VERSION }}
+          golangci-lint config verify
+          golangci-lint run --timeout=5m ./...
 
   test:
     name: test (${{ matrix.os }})
