@@ -6,6 +6,8 @@ package hass
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/SukramJ/go-hamqtt/publisher"
 )
 
 // ConfigFilter is the MQTT filter matching this daemon's discovery config
@@ -27,6 +29,35 @@ func (d *Discovery) IsOwnConfig(payload []byte) bool {
 	}
 	return strings.HasPrefix(uid, d.root+"_") &&
 		(state == "" || strings.HasPrefix(state, d.root+"/"))
+}
+
+// OwnsDeviceConfigTopic reports whether a parsed retained discovery config
+// topic is one this daemon publishes for the given device serial.
+//
+// It is the topic-level twin of [Discovery.IsOwnConfig], and it exists
+// because that is the only question [publisher.SweepRequest.Owns] can be
+// asked: the predicate runs on the transport's read loop with the parsed
+// topic and nothing else, before the payload is offered to Inspect. Scoping
+// the sweep to one device matters and is not a refinement — a fleet-wide
+// predicate would judge a second unit's configs unclaimed during the poll in
+// which only the first unit has published, and retract them.
+//
+// The form checked is this bridge's own and only form,
+// `<base>/<platform>/<unique_id>/config`: four segments, no node-id level,
+// which is what [publisher.ParseConfigTopic] reports as a non-bundle topic
+// with an empty NodeID. A five-segment config or a device document under the
+// same prefix belongs to somebody else — or to a later migration step — and
+// is declined here rather than assumed.
+//
+// Ownership of the *payload* is still checked separately, through
+// [Discovery.IsOwnConfig] on the body the sweep inspects: the topic namespace
+// is specific but it is still a namespace, and a retained config this daemon
+// did not write must never be cleared on the strength of its topic alone.
+func OwnsDeviceConfigTopic(root, sn string, t publisher.ConfigTopic) bool {
+	if t.Bundle || t.Platform == "" || t.NodeID != "" || t.ObjectID == "" {
+		return false
+	}
+	return strings.HasPrefix(t.ObjectID, root+"_"+sn+"_")
 }
 
 // OrphanConfigs returns the retained config topics that this daemon owns for

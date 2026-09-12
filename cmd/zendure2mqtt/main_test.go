@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
 )
 
@@ -93,5 +94,54 @@ func TestMQTTSessionSubscribeBypassesBreaker(t *testing.T) {
 	}
 	if len(sub.unsubscribed) != 1 || sub.unsubscribed[0] != "zendure/+/+/+/set" {
 		t.Fatalf("unsubscriber saw %v, want [zendure/+/+/+/set]", sub.unsubscribed)
+	}
+}
+
+// TestDeferredTransportRefusesUseBeforeWiring covers the one type this
+// composition root owns.
+//
+// It exists for an ordering constraint that is real and not incidental: the
+// Last Will is part of CONNECT, so the MQTT client has to be constructed with
+// it, while the will itself is publisher.Runtime's answer — Will() returns
+// the same topic and the same payload AnnounceOnline and AnnounceOffline
+// write, which is what keeps this bridge from configuring a will no published
+// entity references. The runtime is therefore built first, over a transport
+// whose client arrives a few lines later.
+//
+// What is deliberately NOT covered here: that run() actually uses Will()'s
+// values rather than a literal of its own. run() is a composition root in a
+// main package — it dials a broker and blocks — and no test can construct it.
+// The guarantee is structural instead: there is no "offline" literal and no
+// status-topic literal left in main.go, and coordinator.BridgeStatusTopic is
+// pinned against harender.Layout.Bridge in
+// TestBridgeStatusTopicIsOneString. Saying so is better than implying a
+// coverage this file does not have.
+func TestDeferredTransportRefusesUseBeforeWiring(t *testing.T) {
+	t.Parallel()
+
+	var link deferredTransport
+	if err := link.Publish(t.Context(), "t", []byte("x"), 0, true); !errors.Is(err, errTransportNotWired) {
+		t.Errorf("Publish before wiring = %v, want errTransportNotWired", err)
+	}
+	if err := link.Subscribe(t.Context(), "t", 0, func(string, []byte, bool) {}); !errors.Is(err, errTransportNotWired) {
+		t.Errorf("Subscribe before wiring = %v, want errTransportNotWired", err)
+	}
+	if err := link.Unsubscribe(t.Context(), "t"); !errors.Is(err, errTransportNotWired) {
+		t.Errorf("Unsubscribe before wiring = %v, want errTransportNotWired", err)
+	}
+
+	rec := &recordingSubscriber{}
+	link.wire(hagomqtt.Split(&failingPublisher{}, rec))
+	if err := link.Publish(t.Context(), "t", []byte("x"), 0, true); !errors.Is(err, mqtt.ErrNotConnected) {
+		t.Errorf("Publish after wiring = %v, want the wrapped client's error", err)
+	}
+	if err := link.Subscribe(t.Context(), "homeassistant/status", 0, func(string, []byte, bool) {}); err != nil {
+		t.Errorf("Subscribe after wiring: %v", err)
+	}
+	if len(rec.subscribed) != 1 || rec.subscribed[0] != "homeassistant/status" {
+		t.Errorf("subscriber saw %v, want [homeassistant/status]", rec.subscribed)
+	}
+	if err := link.Unsubscribe(t.Context(), "homeassistant/status"); err != nil {
+		t.Errorf("Unsubscribe after wiring: %v", err)
 	}
 }

@@ -9,8 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/SukramJ/go-mqtt"
-
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
@@ -24,7 +22,7 @@ type stubPub struct {
 	calls  int
 }
 
-func (s *stubPub) Publish(_ context.Context, topic string, payload []byte, _ mqtt.QoS, _ bool, _ ...mqtt.PublishOption) error {
+func (s *stubPub) Publish(_ context.Context, topic string, payload []byte) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.topics == nil {
@@ -32,10 +30,10 @@ func (s *stubPub) Publish(_ context.Context, topic string, payload []byte, _ mqt
 	}
 	s.topics[topic] = payload
 	s.calls++
-	return nil
+	return true, nil
 }
 
-func newDisc(pub mqtt.Publisher) *Discovery {
+func newDisc(pub ConfigWriter) *Discovery {
 	return New("homeassistant", "zendure", "en", pub, nil)
 }
 
