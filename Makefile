@@ -71,6 +71,7 @@ GOFUMPT_VERSION       ?= v0.12.0
 GOLANGCI_LINT_VERSION ?= v2.13.2
 GOVULNCHECK_VERSION   ?= v1.8.0
 GOLICENSES_VERSION    ?= v1.6.0
+GITLEAKS_VERSION      ?= v8.30.1
 
 .PHONY: setup
 setup: hooks ## install developer tooling (gofumpt, goimports, golangci-lint, govulncheck, go-licenses) + git hooks
@@ -139,6 +140,17 @@ vuln: ## scan dependencies + reachable code for known vulnerabilities (govulnche
 .PHONY: licenses
 licenses: ## fail on copyleft dependency licenses (GPL/AGPL/LGPL forbidden; MPL = reciprocal)
 	$(GOLICENSES) check ./... --disallowed_types=forbidden,restricted,reciprocal
+
+# Git mode: scans the tracked history, not just the working tree. A secret
+# committed once and reverted in the next commit is still in the history and
+# still a secret — and this daemon handles a Zendure cloud app token plus
+# MQTT credentials. Deliberately configless: the default ruleset is clean
+# over all 57 commits, so there is no allowlist to hide behind. The first
+# fixture that trips a rule gets a .gitleaks.toml entry with a reason,
+# rather than being pre-exempted by a blanket testdata/docs carve-out.
+.PHONY: secrets
+secrets: ## scan the tracked git history for committed secrets (gitleaks)
+	$(GO) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) git --no-banner --redact .
 
 .PHONY: tidy
 tidy: ## sync go.mod / go.sum

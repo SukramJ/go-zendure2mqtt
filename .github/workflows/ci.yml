@@ -49,6 +49,7 @@ env:
   # reachability analysis or license classifier under an unrelated PR.
   GOVULNCHECK_VERSION: "v1.8.0"
   GOLICENSES_VERSION: "v1.6.0"
+  GITLEAKS_VERSION: "v8.30.1"
 
 jobs:
   lint:
@@ -98,10 +99,12 @@ jobs:
   # vulnerability sits on a path this code actually calls. Both targets
   # already existed in the Makefile and ran in no job.
   security:
-    name: security (vuln + licenses)
+    name: security (vuln + licenses + secrets)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history, so the gitleaks git-mode scan is complete
       - uses: actions/setup-go@v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -114,6 +117,11 @@ jobs:
         run: |
           go install github.com/google/go-licenses@${{ env.GOLICENSES_VERSION }}
           make licenses
+      # Scans the tracked history, not the checkout: a secret committed once
+      # and reverted is still in the history and still a secret. This daemon
+      # handles a Zendure cloud app token and MQTT credentials.
+      - name: gitleaks
+        run: make secrets
 
   test:
     name: test (${{ matrix.os }})
