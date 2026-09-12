@@ -1,6 +1,6 @@
 {
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_current",
@@ -17,8 +17,12 @@
       },
       "device_class": "current",
       "name": "Pack current",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/current/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current",
@@ -26,7 +30,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_max_cell_voltage",
@@ -43,8 +47,12 @@
       },
       "device_class": "voltage",
       "name": "Max cell voltage",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/max_cell_voltage/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage",
@@ -52,7 +60,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_max_temp",
@@ -69,8 +77,12 @@
       },
       "device_class": "temperature",
       "name": "Pack max temperature",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/max_temp/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp",
@@ -78,7 +90,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_min_cell_voltage",
@@ -95,8 +107,12 @@
       },
       "device_class": "voltage",
       "name": "Min cell voltage",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/min_cell_voltage/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage",
@@ -104,7 +120,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_power",
@@ -121,8 +137,12 @@
       },
       "device_class": "power",
       "name": "Pack power",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/power/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power",
@@ -130,7 +150,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_soc_level",
@@ -147,8 +167,12 @@
       },
       "device_class": "battery",
       "name": "Pack SoC",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/soc_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level",
@@ -156,7 +180,7 @@
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage": {
-    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage/config",
+    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_total_voltage",
@@ -173,8 +197,12 @@
       },
       "device_class": "voltage",
       "name": "Pack voltage",
+      "origin": {
+        "name": "go-zendure2mqtt"
+      },
       "payload_available": "online",
       "payload_not_available": "offline",
+      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/total_voltage/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage",

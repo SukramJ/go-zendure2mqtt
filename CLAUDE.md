@@ -86,6 +86,18 @@ device registry: `serial_number`, `model_id` (= report `product`), `sw_version` 
 device nor rename entity_ids** — a discovery-schema change needs a one-time reset (clear the
 retained `homeassistant/.../config` topics, then republish).
 
+Discovery is **device-based**: one retained document per HA device at
+`homeassistant/device/<node_id>/config`, node id = the device identifier
+(`zendure2mqtt_<sn>`, `zendure2mqtt_<sn>_pack_<packSn>`), carrying the device block, an
+`origin` block and every entity as a component. It replaced 29 per-entity configs at the
+four-segment `homeassistant/<platform>/<unique_id>/config` in ADR 0070 phase 5 step 5, with
+`unique_id` and `default_entity_id` frozen. **The retraction of the old form comes first and
+the ordering is load-bearing**: HA refuses a document while a per-entity config for the same
+`unique_id` is retained, and says so with one `WARNING [mqtt.entity] Received a conflicting
+MQTT discovery message` line and nothing else. `publisher.Config.LegacyEntityTopics` must
+state `publisher.LegacyTopicByUniqueID` — the library default renders the five-segment form
+and would retract nothing at all for this fleet.
+
 ### Virtual switches (`internal/virtual`)
 `charge_active` / `discharge_active`: synthetic HA switches with no single backing property.
 ON writes a property set (`acMode` + `inputLimit`/`outputLimit` + `smartMode`); state is
@@ -119,7 +131,8 @@ channel that the cloud backend's reconnect loop reads.
 <MQTT_TOPIC>/<sn>/battery/<packSn>/<topic>/state   # per-pack values
 <MQTT_TOPIC>/<sn>/<group>/<topic>/set              # subscribed, writable entities + switches
 <MQTT_TOPIC>/bridge/status                         # LWT + explicit offline on shutdown
-homeassistant/<platform>/zendure2mqtt_<sn>_<topic>/config  # HA discovery, retained
+homeassistant/device/zendure2mqtt_<sn>/config              # HA discovery, retained (one document per device)
+homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config # ... one per battery pack
 ```
 
 ## Config

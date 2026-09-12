@@ -43,5 +43,14 @@ For a standard Home Assistant install with the Mosquitto broker:
 
 State is published under `<mqtt_topic>/<sn>/<group>/<key>/state`, battery packs
 under `<mqtt_topic>/<sn>/battery/<packSn>/<key>/state`, and writable entities
-listen on `…/set`. Home Assistant discovery configs are published under
-`homeassistant/<platform>/<unique_id>/config`.
+listen on `…/set`. Home Assistant discovery uses the device-based format: one retained document
+per device under `homeassistant/device/<node_id>/config`, where the node id is
+the device identifier (`zendure2mqtt_<sn>`, and
+`zendure2mqtt_<sn>_pack_<packSn>` for each battery pack).
+
+Earlier releases published one retained config per entity under
+`homeassistant/<platform>/<unique_id>/config`. The first start after
+upgrading retracts those and then publishes the documents, in that order.
+Your entities keep their entity ids, names, icons, areas, history and
+automations, because `unique_id` is unchanged. Downgrading needs the retained
+documents cleared by hand first — see the changelog.

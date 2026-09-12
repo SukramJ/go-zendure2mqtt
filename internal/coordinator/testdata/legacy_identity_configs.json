@@ -1,6 +1,5 @@
 {
   "hyphen-in-name/zendure2mqtt_SF2400AC0012345_charge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
@@ -17,20 +16,16 @@
         "serial_number": "SF2400AC0012345"
       },
       "name": "Charge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_charge_active/config"
   },
   "hyphen-in-name/zendure2mqtt_SF2400AC0012345_discharge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
@@ -47,20 +42,16 @@
         "serial_number": "SF2400AC0012345"
       },
       "name": "Discharge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_discharge_active/config"
   },
   "hyphen-in-name/zendure2mqtt_SF2400AC0012345_electric_level": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.haus_nord_electric_level",
@@ -77,20 +68,16 @@
       },
       "device_class": "battery",
       "name": "Battery level",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/now/electric_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_electric_level/config"
   },
   "non-german-accent/zendure2mqtt_SF2400AC0012345_charge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
@@ -103,24 +90,20 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Café Nord",
+        "name": "Caf\u00e9 Nord",
         "serial_number": "SF2400AC0012345"
       },
       "name": "Charge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_charge_active/config"
   },
   "non-german-accent/zendure2mqtt_SF2400AC0012345_discharge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
@@ -133,24 +116,20 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Café Nord",
+        "name": "Caf\u00e9 Nord",
         "serial_number": "SF2400AC0012345"
       },
       "name": "Discharge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_discharge_active/config"
   },
   "non-german-accent/zendure2mqtt_SF2400AC0012345_electric_level": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.caf_nord_electric_level",
@@ -162,25 +141,21 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Café Nord",
+        "name": "Caf\u00e9 Nord",
         "serial_number": "SF2400AC0012345"
       },
       "device_class": "battery",
       "name": "Battery level",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/now/electric_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_electric_level/config"
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_charge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
@@ -197,20 +172,16 @@
         "serial_number": "SF2400AC0012345"
       },
       "name": "Charge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_charge_active/config"
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_discharge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
@@ -227,20 +198,16 @@
         "serial_number": "SF2400AC0012345"
       },
       "name": "Discharge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_discharge_active/config"
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_pack_AB-12_soc_level": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AB-12/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ab_12_soc_level",
@@ -256,20 +223,16 @@
       },
       "device_class": "battery",
       "name": "Pack SoC",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AB-12/soc_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AB-12_soc_level",
       "unit_of_measurement": "%"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AB-12_soc_level/config"
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_pack_AB_12_soc_level": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AB_12/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ab_12_soc_level",
@@ -285,20 +248,16 @@
       },
       "device_class": "battery",
       "name": "Pack SoC",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AB_12/soc_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AB_12_soc_level",
       "unit_of_measurement": "%"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_AB_12_soc_level/config"
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_pack_count": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_count",
@@ -314,18 +273,14 @@
         "serial_number": "SF2400AC0012345"
       },
       "name": "Battery pack count",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_topic": "zendure2mqtt/SF2400AC0012345/static/pack_count/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_pack_count/config"
   },
   "umlaut-u/zendure2mqtt_SF2400AC0012345_charge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
@@ -338,24 +293,20 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Balkon Süd",
+        "name": "Balkon S\u00fcd",
         "serial_number": "SF2400AC0012345"
       },
       "name": "Charge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_charge_active/config"
   },
   "umlaut-u/zendure2mqtt_SF2400AC0012345_discharge_active": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
@@ -368,24 +319,20 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Balkon Süd",
+        "name": "Balkon S\u00fcd",
         "serial_number": "SF2400AC0012345"
       },
       "name": "Discharge active",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
       "payload_off": "0",
       "payload_on": "1",
-      "platform": "switch",
       "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
-    }
+    },
+    "topic": "homeassistant/switch/zendure2mqtt_SF2400AC0012345_discharge_active/config"
   },
   "umlaut-u/zendure2mqtt_SF2400AC0012345_electric_level": {
-    "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
       "availability_topic": "zendure2mqtt/bridge/status",
       "default_entity_id": "sensor.balkon_sud_electric_level",
@@ -397,21 +344,18 @@
         "manufacturer": "Zendure",
         "model": "SolarFlow 2400 AC",
         "model_id": "solarFlow2400AC",
-        "name": "Balkon Süd",
+        "name": "Balkon S\u00fcd",
         "serial_number": "SF2400AC0012345"
       },
       "device_class": "battery",
       "name": "Battery level",
-      "origin": {
-        "name": "go-zendure2mqtt"
-      },
       "payload_available": "online",
       "payload_not_available": "offline",
-      "platform": "sensor",
       "state_class": "measurement",
       "state_topic": "zendure2mqtt/SF2400AC0012345/now/electric_level/state",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%"
-    }
+    },
+    "topic": "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_electric_level/config"
   }
 }

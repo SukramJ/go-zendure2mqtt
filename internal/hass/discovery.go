@@ -1,126 +1,227 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2026 SukramJ
 
-// Package hass builds Home Assistant MQTT auto-discovery payloads.
+// Package hass publishes this bridge's Home Assistant MQTT auto-discovery
+// documents, and owns the identity strings they carry.
 //
-// For every catalogued point it publishes a retained config message under
-// <base>/<platform>/zendure_<sn>_<topic>/config so Home Assistant creates
-// the matching entity (sensor/number/select/switch) and wires it to the
-// bridge's state and command topics.
+// Since ADR 0070 phase 5 step 5 the form is Home Assistant's device-based
+// discovery: one retained document per device at
+// <base>/device/<node_id>/config, carrying the device block, the origin block
+// and every one of that device's components. It replaced 29 retained
+// per-entity configs at <base>/<platform>/<unique_id>/config — four segments,
+// no node-id level, which Home Assistant permits and which is why the
+// migration needed [publisher.LegacyTopicByUniqueID] to retract them.
+//
+// The payloads themselves are rendered by internal/harender through the
+// shared go-hamqtt model; this package decides what to publish and when, and
+// keeps the identity formulas ([UniqueID], [DeviceName], [EntityObjectID])
+// that the migration froze.
 package hass
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/SukramJ/go-hamqtt/discovery"
+
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
 
-// ConfigWriter is the narrow slice of [publisher.Runtime] this package
-// publishes retained discovery configs through.
+// BundleWriter is the narrow slice of [publisher.Runtime] this package
+// publishes retained device documents through.
 //
-// An interface of one method rather than the concrete runtime because what
-// this package needs from it is one call, and because the boolean is part of
-// the contract: the runtime claims the topic before it writes and records it
-// afterwards, and that claim is what keeps the orphan sweep from retracting a
-// config this process is publishing right now. Writing configs straight to an
-// MQTT client — which is what this package did before ADR 0070 phase 5,
-// step 4 — leaves the sweep with nothing to compare against.
-type ConfigWriter interface {
-	// Publish writes one retained discovery config and reports whether it
-	// reached the broker.
-	Publish(ctx context.Context, topic string, payload []byte) (bool, error)
+// One method, and it must be [publisher.Runtime.PublishBundle] rather than a
+// plain retained publish, because the ordering inside it is the whole
+// migration: it retracts the per-entity configs the document supersedes
+// *first* and aborts before writing the document if a retraction fails.
+// Publishing a device document while a per-entity config for the same
+// unique_id is still retained is refused by Home Assistant — symmetrically,
+// measured on HA 2026.9 on 2026-09-10/11 — with one
+// `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+// and nothing else: the entities simply do not appear. A partial retraction
+// followed by a publish is the same failure for the entities whose old config
+// survived, which is why the abort matters as much as the order.
+//
+// The boolean is part of the contract for the same reason it was before: the
+// runtime claims the topic before it writes and records it afterwards, and
+// that claim is what keeps the orphan sweep from retracting a document this
+// process is publishing right now.
+type BundleWriter interface {
+	// PublishBundle retracts the superseded per-entity configs, then writes
+	// one retained device document, and reports whether it reached the
+	// broker.
+	PublishBundle(ctx context.Context, b *discovery.Bundle) (bool, error)
 }
 
-// Discovery publishes Home Assistant discovery configs (idempotently: each
-// unique_id is sent once per process lifetime).
+// BundleRenderer renders one device's retained discovery document.
+//
+// An interface here, satisfied by harender.Renderer, purely to keep the
+// dependency pointing one way: internal/harender calls [UniqueID],
+// [DeviceName] and [EntityObjectID] out of this package — the production
+// identity formulas, called rather than copied, so a second rendering path
+// cannot drift from them — so this package cannot import that one.
+type BundleRenderer interface {
+	// Bundle renders the device document for one owner: the main unit when
+	// packSN is empty, that unit's battery sub-device otherwise. It returns
+	// nil, nil for an owner that mints no entity.
+	Bundle(dev source.Device, report *model.Report, packSN string, points []process.Point) (*discovery.Bundle, error)
+}
+
+// Discovery publishes Home Assistant device documents (idempotently: each
+// unique_id triggers one publish of its device's document per process
+// lifetime).
 type Discovery struct {
 	base   string // HA discovery root, e.g. "homeassistant"
-	root   string // bridge MQTT topic root, e.g. "zendure"
-	lang   string
-	pub    ConfigWriter
+	root   string // bridge MQTT topic root, e.g. "zendure2mqtt"
+	render BundleRenderer
+	pub    BundleWriter
 	logger *slog.Logger
 
-	mu   sync.Mutex
+	mu sync.Mutex
+	// sent records the unique_ids whose device document has been published
+	// in this process. Keyed on the unique_id and not on the document topic
+	// deliberately: the guard has to fire for an entity that appears later
+	// in a process — a pack learned on the third poll, a catalog point whose
+	// value was absent from the first report — and a document-level guard
+	// would leave it out until the next restart.
 	sent map[string]bool
+	// byTopic maps a document topic to the unique_ids it carried, so
+	// [Discovery.Forget] can undo the guard for a document the sweep
+	// cleared. The topic no longer names a unique_id, which is what the
+	// per-entity form gave for free.
+	byTopic map[string][]string
 }
 
 // New constructs a Discovery publisher.
-func New(base, root, lang string, pub ConfigWriter, logger *slog.Logger) *Discovery {
+func New(base, root string, render BundleRenderer, pub BundleWriter, logger *slog.Logger) *Discovery {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Discovery{base: base, root: root, lang: lang, pub: pub, logger: logger, sent: map[string]bool{}}
+	return &Discovery{
+		base: base, root: root, render: render, pub: pub, logger: logger,
+		sent: map[string]bool{}, byTopic: map[string][]string{},
+	}
 }
 
-// Publish emits discovery configs for every catalogued, HA-eligible point and
-// returns the set of config topics that make up the device's current entity set
-// — whether freshly published this call or already sent earlier in the process
+// Publish emits the retained device document for every Home Assistant device
+// in a report — the main unit and one per battery pack — and returns the set
+// of document topics that make up this device's current entity set, whether
+// freshly published this call or already sent earlier in the process
 // lifetime. The caller reconciles this set against the broker's retained
 // configs to clear orphans (see the coordinator's reconcileOrphans). Points
-// without a catalog entry or platform are skipped.
-func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *model.Report, points []process.Point) (published map[string]bool) {
-	published = make(map[string]bool, len(points))
-	for _, p := range points {
-		if p.Entry == nil || p.Entry.Platform == "" {
-			continue
-		}
-		uniqueID := d.uniqueID(dev.SN, p)
-		// The config topic belongs to the device's current set whether or not we
-		// (re)send it below, so record it before the already-sent guard: a
-		// steady-state publish (everything already sent) must still report the
-		// full set so reconciliation does not treat live entities as orphans.
-		published[d.configTopic(p.Entry.Platform, uniqueID)] = true
-		d.mu.Lock()
-		already := d.sent[uniqueID]
-		d.mu.Unlock()
-		if already {
-			continue
-		}
-		topic, payload, err := d.config(dev, report, p, uniqueID)
+// without a catalog entry or platform are skipped, and an owner that mints no
+// entity at all publishes nothing: an empty `components` map is not a device
+// with no entities, it is Home Assistant's instruction to remove every entity
+// of that device.
+//
+// The guard is payload-blind, and stays so. It fires on a unique_id never
+// published in this process, so the first report of a process decides the
+// retained document for the rest of it and a catalog edit does not reach the
+// broker until a restart. That is F1 of the ADR 0070 phase-5 measurement,
+// preserved rather than fixed here because a defect fixed inside the step
+// that also moves every payload is a defect nobody can measure. One
+// consequence of the document form is unavoidable and is a narrowing rather
+// than a fix: when a *new* entity appears mid-process its device's whole
+// document is rewritten, so that one publish also carries the current bodies
+// of its siblings. There is one document per device; it cannot be written
+// per entity.
+func (d *Discovery) Publish(
+	ctx context.Context,
+	dev source.Device,
+	report *model.Report,
+	points []process.Point,
+) (published map[string]bool) {
+	owners := process.Owners(points)
+	published = make(map[string]bool, len(owners))
+	for _, packSN := range owners {
+		bundle, err := d.render.Bundle(dev, report, packSN, points)
 		if err != nil {
-			d.logger.Warn("hass.config_failed", slog.String("id", uniqueID), slog.String("err", err.Error()))
+			d.logger.Warn("hass.bundle_failed",
+				slog.String("sn", dev.SN), slog.String("pack", packSN), slog.String("err", err.Error()))
 			continue
 		}
-		if _, err := d.pub.Publish(ctx, topic, payload); err != nil {
-			d.logger.Warn("hass.publish_failed", slog.String("topic", topic), slog.String("err", err.Error()))
+		if bundle == nil {
+			continue
+		}
+		topic := bundle.Topic(d.base)
+		// The document topic belongs to the device's current set whether or
+		// not we (re)send it below, so record it before the already-sent
+		// guard: a steady-state publish must still report the full set so
+		// reconciliation does not treat a live document as an orphan.
+		published[topic] = true
+
+		ids := componentIDs(bundle)
+		d.mu.Lock()
+		fresh := false
+		for _, id := range ids {
+			if !d.sent[id] {
+				fresh = true
+				break
+			}
+		}
+		d.mu.Unlock()
+		if !fresh {
+			continue
+		}
+
+		if _, err := d.pub.PublishBundle(ctx, bundle); err != nil {
+			// Nothing is marked sent, so the next report retries. That
+			// matters more here than it did for a per-entity config: a
+			// failure inside PublishBundle can be a failed *retraction*,
+			// which means a legacy config is still retained and Home
+			// Assistant would refuse the document even if it arrived.
+			d.logger.Warn("hass.publish_failed",
+				slog.String("topic", topic), slog.String("err", err.Error()))
 			continue
 		}
 		d.mu.Lock()
-		d.sent[uniqueID] = true
+		for _, id := range ids {
+			d.sent[id] = true
+		}
+		d.byTopic[topic] = ids
 		d.mu.Unlock()
 	}
 	return published
 }
 
-// Forget drops the given discovery config topics from the already-sent set so
-// their entities are republished on the next matching point. The coordinator
-// calls this right after clearing retained orphan configs: if a "orphan" was in
-// fact still live (e.g. a transiently shrunken report), the next report restores
+// componentIDs lists the unique_ids a document carries, in the document's own
+// sorted key order.
+func componentIDs(b *discovery.Bundle) []string {
+	out := make([]string, 0, len(b.Components))
+	for _, key := range b.Keys() {
+		if uid := b.Components[key].UniqueID; uid != "" {
+			out = append(out, uid)
+		}
+	}
+	return out
+}
+
+// Forget drops the given device documents from the already-sent set so they
+// are republished on the next matching report. The coordinator calls this
+// right after clearing retained orphan configs: if an "orphan" was in fact
+// still live (e.g. a transiently shrunken report), the next report restores
 // it instead of leaving it deleted for the rest of the process lifetime.
+//
+// A topic this process never published is ignored rather than parsed. The
+// document topic carries a node id and no unique_id, so the mapping back to
+// the guard's keys is the one this process recorded when it wrote the
+// document — there is nothing in the string to recover it from, which is the
+// one thing the per-entity form gave for free.
 func (d *Discovery) Forget(configTopics []string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, topic := range configTopics {
-		// configTopic() is <base>/<platform>/<uniqueID>/config; recover the id.
-		parts := strings.Split(topic, "/")
-		if len(parts) < 2 {
-			continue
+		for _, id := range d.byTopic[topic] {
+			delete(d.sent, id)
 		}
-		delete(d.sent, parts[len(parts)-2])
+		delete(d.byTopic, topic)
 	}
-}
-
-// uniqueID derives a stable, broker-wide-unique entity id.
-func (d *Discovery) uniqueID(sn string, p process.Point) string {
-	return UniqueID(d.root, sn, p.PackSN, p.Topic)
 }
 
 // UniqueID is the formula behind every entity's unique_id, exported so a
@@ -129,10 +230,11 @@ func (d *Discovery) uniqueID(sn string, p process.Point) string {
 //
 // Home Assistant keys its entity registry on this and has no migration path
 // for it, so the string is frozen: ADR 0070 sanctions a re-key for the
-// bridges and this one declines it (ADR 0070 phase 5, step 2). A parallel
-// rendering path that re-derived the formula instead of calling this could
-// drift from it without any pin noticing, because the pins compare the two
-// against each other and would simply agree on a wrong answer.
+// bridges and this one declines it. Declining it is why this bridge was
+// chosen as the pilot — and it is what makes the device-document migration
+// survivable, because an entity whose unique_id is unchanged keeps its
+// history, its name override, its icon, its area and its automations when its
+// config moves from a per-entity topic into a device document.
 //
 // Note that root is config.MQTTTopic and therefore operator-configurable,
 // which is F2 of the phase-5 measurement: changing it re-keys every entity.
@@ -143,111 +245,6 @@ func UniqueID(root, sn, packSN, topicLeaf string) string {
 		return fmt.Sprintf("%s_%s_pack_%s_%s", root, sn, packSN, topicLeaf)
 	}
 	return fmt.Sprintf("%s_%s_%s", root, sn, topicLeaf)
-}
-
-// config builds the (topic, payload) for one entity.
-func (d *Discovery) config(dev source.Device, report *model.Report, p process.Point, uniqueID string) (topic string, payload []byte, err error) {
-	e := p.Entry
-	// default_entity_id seeds an English, language-independent entity_id (device
-	// name + English topic) so entity_ids stay stable while the localized display
-	// name changes. The former object_id key is NOT published: HA's MQTT discovery
-	// schemas are extra=REMOVE_EXTRA and no MQTT platform declares object_id any
-	// more (0 of 32 as of HA 2026.9), so it was silently dropped on arrival.
-	// unique_id is deliberately independent of the seed, so the entity identity
-	// never changes with the name.
-	seed := EntityObjectID(d.deviceName(dev, p), p.Topic)
-	cfg := map[string]any{
-		"name":              e.FriendlyName(d.lang),
-		"unique_id":         uniqueID,
-		"default_entity_id": e.Platform + "." + seed,
-		"state_topic":       process.StateTopic(d.root, dev.SN, p),
-		// Availability ties every entity to the bridge status (LWT) topic so HA
-		// shows them unavailable when the bridge is down.
-		"availability_topic":    d.root + "/bridge/status",
-		"payload_available":     "online",
-		"payload_not_available": "offline",
-		"device":                d.deviceBlock(dev, report, p),
-	}
-	if e.DeviceClass != "" {
-		cfg["device_class"] = e.DeviceClass
-	}
-	if e.Unit != "" {
-		cfg["unit_of_measurement"] = e.Unit
-	}
-	if e.Writable {
-		cfg["command_topic"] = process.CommandTopic(d.root, dev.SN, p)
-	}
-	switch e.Platform {
-	case "sensor":
-		if e.DeviceClass == "energy" {
-			cfg["state_class"] = "total_increasing"
-		} else if e.Unit != "" {
-			cfg["state_class"] = "measurement"
-		}
-	case "number":
-		if e.Min != nil {
-			cfg["min"] = *e.Min
-		}
-		if e.Max != nil {
-			cfg["max"] = *e.Max
-		}
-		if e.Step != nil {
-			cfg["step"] = *e.Step
-		}
-	case "select":
-		cfg["options"] = e.Options(d.lang)
-	case "switch":
-		cfg["payload_on"] = "1"
-		cfg["payload_off"] = "0"
-	}
-
-	payload, err = json.Marshal(cfg)
-	if err != nil {
-		return "", nil, fmt.Errorf("hass: marshal config: %w", err)
-	}
-	return d.configTopic(e.Platform, uniqueID), payload, nil
-}
-
-// configTopic is the retained HA discovery config topic for an entity:
-// <base>/<platform>/<uniqueID>/config.
-func (d *Discovery) configTopic(platform, uniqueID string) string {
-	return fmt.Sprintf("%s/%s/%s/config", d.base, platform, uniqueID)
-}
-
-// deviceBlock is the HA "device" registry block for a point. The main unit
-// is one device; each battery pack is split out into its own sub-device,
-// linked back to the main unit via `via_device` so Home Assistant nests
-// them under the SolarFlow instead of flattening every pack value onto it.
-func (d *Discovery) deviceBlock(dev source.Device, report *model.Report, p process.Point) map[string]any {
-	mainID := d.root + "_" + dev.SN
-	if p.PackSN == "" {
-		blk := map[string]any{
-			"identifiers":   []string{mainID},
-			"name":          d.deviceName(dev, p),
-			"manufacturer":  "Zendure",
-			"model":         dev.Model,
-			"serial_number": dev.SN,
-		}
-		if report != nil && report.Product != "" {
-			blk["model_id"] = report.Product // e.g. "solarFlow2400AC"
-		}
-		if dev.Address != "" {
-			blk["configuration_url"] = "http://" + dev.Address // device's local HTTP API host
-		}
-		return blk
-	}
-	blk := map[string]any{
-		"identifiers":   []string{mainID + "_pack_" + p.PackSN},
-		"name":          d.deviceName(dev, p),
-		"manufacturer":  "Zendure",
-		"model":         "Battery Pack",
-		"serial_number": p.PackSN,
-		"via_device":    mainID,
-	}
-	if sw := PackSoftVersion(report, p.PackSN); sw != "" {
-		blk["sw_version"] = sw
-	}
-	return blk
 }
 
 // PackSoftVersion returns a battery pack's firmware version
@@ -276,14 +273,6 @@ func numString(v any) string {
 		return strconv.FormatFloat(f, 'f', -1, 64)
 	}
 	return fmt.Sprintf("%v", v)
-}
-
-// deviceName is the HA device friendly name: the unit, or a per-pack
-// sub-device name. Language-independent (used to seed the entity_id).
-// A configured DeviceName replaces the "Zendure <SN>" default; when unset
-// the serial-number default applies.
-func (d *Discovery) deviceName(dev source.Device, p process.Point) string {
-	return DeviceName(dev, p.PackSN)
 }
 
 // DeviceName is the HA device friendly name for a unit or one of its battery

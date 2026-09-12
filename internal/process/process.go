@@ -191,3 +191,26 @@ func toInt(v any) int {
 	}
 	return 0
 }
+
+// Owners lists the distinct Home Assistant device owners in a point slice —
+// the empty string for the main unit, then one battery-pack serial per pack —
+// in the order they first appear, skipping points that mint no entity.
+//
+// One owner is one Home Assistant device and therefore one retained device
+// document, so this is what the discovery plane iterates. Arrival order
+// rather than sorted, because it decides the order the documents are
+// published in and the main unit's points come first in every report this
+// bridge resolves: Home Assistant sees the parent before the sub-devices
+// that name it in `via_device`.
+func Owners(points []Point) []string {
+	out := make([]string, 0, 2)
+	seen := map[string]bool{}
+	for _, p := range points {
+		if p.Entry == nil || p.Entry.Platform == "" || seen[p.PackSN] {
+			continue
+		}
+		seen[p.PackSN] = true
+		out = append(out, p.PackSN)
+	}
+	return out
+}

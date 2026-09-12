@@ -29,6 +29,7 @@ import (
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
 	"github.com/SukramJ/go-zendure2mqtt/internal/coordinator"
+	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/state"
@@ -102,7 +103,26 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		Prefix:      cfg.HASSBaseTopic,
 		StatusTopic: coordinator.BridgeStatusTopic(cfg.MQTTTopic),
 		QoS:         publisher.QoSAtMostOnce,
-		Logger:      logger,
+		// The single highest-risk statement in this daemon's wiring, and
+		// the one whose failure mode is silent. PublishBundle retracts the
+		// per-entity configs its device document supersedes before writing
+		// the document, because Home Assistant refuses a document while a
+		// per-entity config for the same unique_id is still retained — and
+		// the refusal's only evidence is one
+		// `WARNING [mqtt.entity] Received a conflicting MQTT discovery
+		// message` line, measured on HA 2026.9 on 2026-09-10/11. Which
+		// topics to retract cannot be guessed by the library: this fleet's
+		// 29 retained configs are at `<base>/<platform>/<unique_id>/config`
+		// — four segments, no node-id level, which Home Assistant permits —
+		// while the library's default renders the five-segment form and
+		// would therefore retract nothing at all. Stating a form *replaces*
+		// that default rather than adding to it, which is what makes this
+		// line sufficient and not merely helpful. PR #41 measured
+		// LegacyTopicByUniqueID against the pinned fleet: 29 of 29 exact,
+		// versus 0 of 29 for LegacyTopicByObjectID and 0 of 29 for the
+		// default.
+		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
+		Logger:             logger,
 	})
 	will, err := haRuntime.Will()
 	if err != nil {
@@ -186,7 +206,8 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		// Through the runtime rather than straight to the client: the runtime
 		// claims each config topic, and that claim is what the orphan sweep
 		// compares against and what the birth resync replays.
-		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, haRuntime, logger)
+		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic,
+			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, haRuntime, logger)
 	}
 
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
