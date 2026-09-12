@@ -275,14 +275,6 @@ func numString(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// deviceName is the HA device friendly name: the unit, or a per-pack
-// sub-device name. Language-independent (used to seed the entity_id).
-// A configured DeviceName replaces the "Zendure <SN>" default; when unset
-// the serial-number default applies.
-func (d *Discovery) deviceName(dev source.Device, p process.Point) string {
-	return DeviceName(dev, p.PackSN)
-}
-
 // DeviceName is the HA device friendly name for a unit or one of its battery
 // packs, exported for the same reason as [UniqueID]: it seeds
 // default_entity_id through [EntityObjectID], so a second renderer has to

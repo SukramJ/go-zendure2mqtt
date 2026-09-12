@@ -288,13 +288,14 @@ func TestTheIdentityHazardsSurviveTheMove(t *testing.T) {
 // *previous release* published, and deriving both sides from the current code
 // would let them agree on a wrong answer.
 //
-// Mutation check (each verified to fail): dropping
+// Mutation check, each verified to fail this test: dropping
 // Config.LegacyEntityTopics, so SupersededTopics renders the five-segment
-// form and retracts nothing (the count drops to 0); stating
-// LegacyTopicByObjectID instead (29 retractions, all on the wrong topics);
-// publishing the document through Runtime.Publish instead of PublishBundle
-// (no retractions at all); moving the retraction after the publish inside
-// PublishBundle (every row reported out of order).
+// form — 29 retractions, none of them on a topic this fleet holds, which is
+// the measured failure and is indistinguishable from success on the wire;
+// stating LegacyTopicByObjectID instead, likewise 29 wrong topics;
+// case-folding the node id, which moves the documents and orphans their
+// components; publishing the document through Runtime.Publish instead of
+// PublishBundle, which retracts nothing at all.
 func TestLegacyConfigsAreRetractedBeforeTheDocument(t *testing.T) {
 	captured, wire := capturePublishWire(t, goldenUnit(), goldenReport())
 
