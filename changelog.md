@@ -2,6 +2,33 @@
 
 ## What's Changed
 
+### Added
+
+- **The published Home Assistant discovery payload is now pinned, byte for
+  byte.** `internal/coordinator/testdata/` holds four new golden files: the
+  29 retained discovery configs a SolarFlow 2400 AC with one battery pack
+  produces (22 on the main unit, 7 on the pack sub-device — 20 sensors,
+  5 numbers, 2 selects, 2 virtual switches), the 30 state topics that go with
+  them, and the four device-name and pack-serial inputs whose entity-id seeds
+  no test had ever exercised. They are captured through the real publish path
+  over the shipped `zendure.yaml`, so a catalog edit is visible to them.
+
+  Nothing about the daemon changes — this is a test-only addition. It exists
+  because there was nothing here that would have noticed a changed payload:
+  no `testdata/` anywhere in the tree, no golden file, and a guard consisting
+  of four asserted keys on a single sensor. Home Assistant drops an
+  undeclared discovery key silently (`extra=REMOVE_EXTRA`, no error, no log
+  line) and keys its entity registry on `unique_id` and its device registry
+  on `identifiers`, neither of which has a migration path, so a payload
+  regression here is invisible until entities are already orphaned.
+
+  Two pinned rows record defects rather than intended output, and the test's
+  doc comment names them: two battery packs whose serials differ only in
+  `-` versus `_` collapse onto one `default_entity_id` while keeping distinct
+  `unique_id`s, and a device name containing a non-German accent loses the
+  character instead of transliterating it. Both are pinned as published — a
+  defect that is pinned is one a later change can be seen to fix.
+
 ### Changed
 
 - **go-mqtt v1.3.0 → v1.4.0, and the hand-rolled split client is gone.**
