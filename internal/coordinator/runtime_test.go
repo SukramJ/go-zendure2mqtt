@@ -151,25 +151,17 @@ func newBrokerRig(t *testing.T, retained map[string][]byte) *brokerRig {
 	broker := newFakeBroker(retained)
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
 	dev := goldenUnit()
-	rt := publisher.New(hagomqtt.Transport(broker), publisher.Config{
-		Prefix:      "homeassistant",
-		StatusTopic: BridgeStatusTopic(cfg.MQTTTopic),
-		QoS:         publisher.QoSAtMostOnce,
-		Logger:      discardLogger(),
-	})
+	rt := newHARuntime(broker, cfg.MQTTTopic)
 	c := New(Deps{
-		Cfg:       cfg,
-		Backend:   &goldenBackend{devices: []source.Device{dev}},
-		MQTT:      broker,
-		Catalog:   goldenCatalog(t),
-		HASS:      hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, rt, discardLogger()),
-		Logger:    discardLogger(),
-		HARuntime: rt,
-		StatePlane: publisher.NewStatePublisher(hagomqtt.Transport(broker), publisher.StateConfig{
-			QoS:            publisher.QoSAtMostOnce,
-			CommandFilters: []string{CommandFilter(cfg.MQTTTopic)},
-			Logger:         discardLogger(),
-		}),
+		Cfg:     cfg,
+		Backend: &goldenBackend{devices: []source.Device{dev}},
+		MQTT:    broker,
+		Catalog: goldenCatalog(t),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic,
+			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
+		Logger:     discardLogger(),
+		HARuntime:  rt,
+		StatePlane: newStatePlane(broker, cfg.MQTTTopic),
 	})
 	c.runCtx = t.Context()
 	t.Cleanup(rt.Close)
@@ -344,15 +336,27 @@ func TestBirthMessageReplaysTheDeclaredConfigs(t *testing.T) {
 		t.Fatalf("watchBirth: %v", err)
 	}
 	declared := rig.coord.deps.HARuntime.Declared()
-	if len(declared) != 29 {
-		t.Fatalf("runtime declared %d configs, want 29 — the sweep and the resync both read this set", len(declared))
+	// Two, not 29: one retained device document per Home Assistant device,
+	// the unit and its battery pack. The 29 per-entity configs the
+	// migration superseded are retracted rather than declared, so they are
+	// not replayed either — replaying a retraction would be writing an
+	// empty payload to a topic the broker no longer retains.
+	if len(declared) != 2 {
+		t.Fatalf("runtime declared %d documents, want 2 — the sweep and the resync both read this set", len(declared))
+	}
+	for _, topic := range declared {
+		if !strings.HasPrefix(topic, "homeassistant/device/") {
+			t.Errorf("declared %s, which is not a device document topic", topic)
+		}
 	}
 
-	// Home Assistant going down must not trigger anything: the configs it
+	before := len(rig.broker.publishes())
+
+	// Home Assistant going down must not trigger anything: the documents it
 	// will re-read are already retained.
 	rig.broker.deliver(t, "homeassistant/status", []byte("offline"))
-	if n := configPublishes(rig.broker.publishes(), len(declared)); n != 0 {
-		t.Errorf("a death message replayed %d configs, want 0", n)
+	if n := configPublishes(rig.broker.publishes(), before); n != 0 {
+		t.Errorf("a death message replayed %d documents, want 0", n)
 	}
 
 	rig.broker.deliver(t, "homeassistant/status", []byte("online"))
@@ -362,7 +366,7 @@ func TestBirthMessageReplaysTheDeclaredConfigs(t *testing.T) {
 	rig.coord.deps.HARuntime.Close()
 
 	replayed := map[string]bool{}
-	for _, rec := range rig.broker.publishes()[len(declared):] {
+	for _, rec := range rig.broker.publishes()[before:] {
 		if strings.HasPrefix(rec.Topic, "homeassistant/") {
 			replayed[rec.Topic] = true
 			if rec.QoS != mqtt.QoS0 || !rec.Retain {
@@ -371,7 +375,7 @@ func TestBirthMessageReplaysTheDeclaredConfigs(t *testing.T) {
 		}
 	}
 	if len(replayed) != len(declared) {
-		t.Fatalf("birth replayed %d configs, want %d", len(replayed), len(declared))
+		t.Fatalf("birth replayed %d documents, want %d", len(replayed), len(declared))
 	}
 	for _, topic := range declared {
 		if !replayed[topic] {
@@ -411,9 +415,10 @@ func configPublishes(wire []wireRecord, skip int) int {
 //   - a config whose topic sits in this bridge's namespace but whose payload
 //     belongs to somebody else, which is why ownership is checked on the
 //     payload and not only on the topic;
-//   - a five-segment config and a device bundle, neither of which is a form
-//     this bridge publishes, and which therefore belong to another writer or
-//     to a later migration step;
+//   - a stale device document of a battery pack this unit no longer reports,
+//     which is the document-form orphan and did not exist before step 5;
+//   - a five-segment config and another writer's device document, neither of
+//     which is a form or a namespace this bridge publishes;
 //   - an already-empty retained topic, which the broker is clearing anyway.
 //
 // Mutation check: widening the Owns predicate to drop the serial scope
@@ -428,7 +433,8 @@ func TestOrphanSweepRetractsOnlyThisDevicesOwnStaleConfigs(t *testing.T) {
 		foreign    = "homeassistant/sensor/zigbee2mqtt_0x001_battery/config"
 		impostor   = "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_impostor/config"
 		fiveSeg    = "homeassistant/sensor/zendure2mqtt_SF2400AC0012345/legacy/config"
-		bundle     = "homeassistant/device/zendure2mqtt_SF2400AC0012345/config"
+		stalePack  = "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_GONE/config"
+		foreignDoc = "homeassistant/device/zigbee2mqtt_0x001/config"
 		alreadyOut = "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_cleared/config"
 	)
 	retained := map[string][]byte{
@@ -437,9 +443,13 @@ func TestOrphanSweepRetractsOnlyThisDevicesOwnStaleConfigs(t *testing.T) {
 		foreign:   []byte(`{"unique_id":"zigbee2mqtt_0x001_battery","state_topic":"zigbee2mqtt/0x001/battery"}`),
 		// Our namespace on the topic, somebody else's state tree in the
 		// payload.
-		impostor:   []byte(`{"unique_id":"zendure2mqtt_SF2400AC0012345_impostor","state_topic":"elsewhere/SF2400AC0012345/x/state"}`),
-		fiveSeg:    []byte(`{"unique_id":"zendure2mqtt_SF2400AC0012345_legacy","state_topic":"zendure2mqtt/SF2400AC0012345/now/legacy/state"}`),
-		bundle:     []byte(`{"dev":{"ids":["zendure2mqtt_SF2400AC0012345"]},"cmps":{}}`),
+		impostor: []byte(`{"unique_id":"zendure2mqtt_SF2400AC0012345_impostor","state_topic":"elsewhere/SF2400AC0012345/x/state"}`),
+		fiveSeg:  []byte(`{"unique_id":"zendure2mqtt_SF2400AC0012345_legacy","state_topic":"zendure2mqtt/SF2400AC0012345/now/legacy/state"}`),
+		stalePack: []byte(`{"device":{"identifiers":["zendure2mqtt_SF2400AC0012345_pack_GONE"]},` +
+			`"components":{"soc_level":{"platform":"sensor","unique_id":"zendure2mqtt_SF2400AC0012345_pack_GONE_soc_level",` +
+			`"state_topic":"zendure2mqtt/SF2400AC0012345/battery/GONE/soc_level/state"}}}`),
+		foreignDoc: []byte(`{"device":{"identifiers":["zigbee2mqtt_0x001"]},` +
+			`"components":{"battery":{"platform":"sensor","unique_id":"zigbee2mqtt_0x001_battery","state_topic":"zigbee2mqtt/0x001/battery"}}}`),
 		alreadyOut: nil,
 	}
 	rig := newBrokerRig(t, retained)
@@ -468,8 +478,11 @@ func TestOrphanSweepRetractsOnlyThisDevicesOwnStaleConfigs(t *testing.T) {
 		}
 		retracted = append(retracted, rec.Topic)
 	}
-	if len(retracted) != 1 || retracted[0] != ours {
-		t.Fatalf("sweep retracted %v, want exactly [%s]", retracted, ours)
+	sort.Strings(retracted)
+	want := []string{stalePack, ours}
+	sort.Strings(want)
+	if strings.Join(retracted, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("sweep retracted %v, want exactly %v", retracted, want)
 	}
 
 	// And the retraction is remembered on both sides, so a transiently
@@ -535,7 +548,14 @@ func TestOwnsDeviceConfigTopicIsScopedToOneDevice(t *testing.T) {
 		// is part of the compared prefix.
 		{"serial prefix", publisher.ConfigTopic{Platform: "sensor", ObjectID: root + "_SF2400AC001234_x"}, false},
 		{"five-segment form", publisher.ConfigTopic{Platform: "sensor", NodeID: root + "_" + sn, ObjectID: "electric_level"}, false},
-		{"device bundle", publisher.ConfigTopic{NodeID: root + "_" + sn, Bundle: true}, false},
+		// The document form is this bridge's own since step 5, and the
+		// legacy per-entity rows above stay owned because their retained
+		// configs outlive the upgrade.
+		{"our device document", publisher.ConfigTopic{NodeID: root + "_" + sn, Bundle: true}, true},
+		{"our pack document", publisher.ConfigTopic{NodeID: root + "_" + sn + "_pack_AO4H", Bundle: true}, true},
+		{"another unit's document", publisher.ConfigTopic{NodeID: root + "_SF2400AC0099999", Bundle: true}, false},
+		{"a serial we merely prefix, document", publisher.ConfigTopic{NodeID: root + "_SF2400AC001234", Bundle: true}, false},
+		{"foreign document", publisher.ConfigTopic{NodeID: "zigbee2mqtt_0x001", Bundle: true}, false},
 		{"no platform", publisher.ConfigTopic{ObjectID: root + "_" + sn + "_x"}, false},
 		{"no object id", publisher.ConfigTopic{Platform: "sensor"}, false},
 	}

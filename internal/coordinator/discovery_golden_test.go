@@ -22,6 +22,7 @@ import (
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
@@ -35,6 +36,16 @@ var (
 	goldenPackPath       = filepath.Join("testdata", "discovery_pack.json")
 	goldenIdentityPath   = filepath.Join("testdata", "discovery_identity.json")
 	goldenStateTopicPath = filepath.Join("testdata", "state_topics.json")
+	goldenBundlePath     = filepath.Join("testdata", "discovery_bundles.json")
+
+	// The two frozen pins: the per-entity configs every release before ADR
+	// 0070 phase 5 step 5 published, captured from the production code on
+	// main before one byte moved. They are read-only — no -update flag
+	// touches them, deliberately — because they are the record of the
+	// installed base this migration has to re-address without re-keying.
+	// Regenerating them would be regenerating the question.
+	legacyConfigPath   = filepath.Join("testdata", "legacy_per_entity_configs.json")
+	legacyIdentityPath = filepath.Join("testdata", "legacy_identity_configs.json")
 )
 
 // goldenEntry is one retained discovery publish, addressed the way the wire
@@ -186,7 +197,7 @@ func capturePublish(t *testing.T, dev source.Device, report *model.Report) map[s
 // two in step is TestEveryPublishIsAtMostOnce reading the level off the wire
 // rather than off the config: a daemon configured differently from this rig
 // would publish at a different QoS, which that pin fails on.
-func newStatePlane(pub *capturingClient, root string) *publisher.StatePublisher {
+func newStatePlane(pub mqtt.Client, root string) *publisher.StatePublisher {
 	return publisher.NewStatePublisher(hagomqtt.Transport(pub), publisher.StateConfig{
 		QoS:            publisher.QoSAtMostOnce,
 		Encoding:       discovery.RawEncoding,
@@ -198,12 +209,18 @@ func newStatePlane(pub *capturingClient, root string) *publisher.StatePublisher 
 // newHARuntime builds the Home Assistant runtime the daemon builds, over the
 // capturing client: the discovery prefix, this bridge's own status topic and
 // QoS 0 stated with publisher.QoSAtMostOnce.
-func newHARuntime(pub *capturingClient, root string) *publisher.Runtime {
+func newHARuntime(pub mqtt.Client, root string) *publisher.Runtime {
 	return publisher.New(hagomqtt.Transport(pub), publisher.Config{
 		Prefix:      "homeassistant",
 		StatusTopic: BridgeStatusTopic(root),
 		QoS:         publisher.QoSAtMostOnce,
-		Logger:      discardLogger(),
+		// The statement whose absence fails silently: see the composition
+		// root. Without it SupersededTopics renders the five-segment form
+		// and retracts none of this fleet's four-segment configs, and Home
+		// Assistant then refuses every component of the document with one
+		// WARNING line as the only evidence.
+		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
+		Logger:             discardLogger(),
 	})
 }
 
@@ -216,11 +233,12 @@ func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
-		Cfg:        cfg,
-		Backend:    &goldenBackend{devices: []source.Device{dev}},
-		MQTT:       pub,
-		Catalog:    goldenCatalog(t),
-		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, rt, discardLogger()),
+		Cfg:     cfg,
+		Backend: &goldenBackend{devices: []source.Device{dev}},
+		MQTT:    pub,
+		Catalog: goldenCatalog(t),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic,
+			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
 		Logger:     discardLogger(),
 		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
@@ -240,33 +258,82 @@ func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (
 	return out, pub.wire()
 }
 
-// discoveryEntries decodes the captured discovery configs, keyed by the
-// unique_id they carry.
+// discoveryEntries decodes the captured device documents into one row per
+// entity — the *effective* config of that entity — keyed by the unique_id it
+// carries.
+//
+// One row per entity rather than one per retained topic, and that is what
+// keeps this pin comparable across the step that moved the form. Home
+// Assistant assembles an entity's config out of a component body plus the
+// enclosing document's device and origin blocks, so that assembly is what
+// this stores: the component's own keys, plus `device` and `origin` from the
+// document it arrived in, under the topic the document was retained on. The
+// result is a row that can be compared field by field against the row the
+// per-entity form produced, which is the only way "nothing moved except the
+// topic and the origin" is a checkable claim rather than a reading of a diff.
+// The retained bytes themselves are pinned verbatim, separately, by
+// TestDeviceDocumentsArePinned.
 //
 // unique_id is the key on purpose: it is what Home Assistant keys its entity
 // registry on, and it has no migration path. Keying the pin on it means a
 // re-keyed entity shows up as one row removed and one row added — the loudest
 // diff the format can produce — rather than as a quiet field change buried in
 // a payload.
+//
+// An empty payload is skipped. On the boot that performs the migration the
+// wire also carries the retraction of every superseded per-entity config, and
+// a retraction is not a config.
 func discoveryEntries(t *testing.T, captured map[string][]byte) map[string]goldenEntry {
 	t.Helper()
 	out := map[string]goldenEntry{}
+	for topic, doc := range capturedDocuments(t, captured) {
+		components, ok := doc["components"].(map[string]any)
+		if !ok || len(components) == 0 {
+			t.Fatalf("%s: the document carries no components — Home Assistant reads that as 'remove every entity of this device'", topic)
+		}
+		for key, raw := range components {
+			comp, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("%s: component %q is not an object", topic, key)
+			}
+			body := make(map[string]any, len(comp)+2)
+			for k, v := range comp {
+				body[k] = v
+			}
+			body["device"] = doc["device"]
+			body["origin"] = doc["origin"]
+
+			uid, _ := body["unique_id"].(string)
+			if uid == "" {
+				t.Fatalf("%s: component %q carries no unique_id", topic, key)
+			}
+			if prev, dup := out[uid]; dup {
+				t.Fatalf("unique_id %q published twice: %s and %s", uid, prev.Topic, topic)
+			}
+			out[uid] = goldenEntry{Topic: topic, Payload: body}
+		}
+	}
+	return out
+}
+
+// capturedDocuments decodes the retained device documents out of a capture,
+// keyed by their topic. Empty payloads — the superseded per-entity configs
+// this boot retracted — are not documents and are skipped.
+func capturedDocuments(t *testing.T, captured map[string][]byte) map[string]map[string]any {
+	t.Helper()
+	out := map[string]map[string]any{}
 	for topic, raw := range captured {
-		if !strings.HasPrefix(topic, "homeassistant/") {
+		if !strings.HasPrefix(topic, "homeassistant/") || len(raw) == 0 {
 			continue
 		}
-		var body map[string]any
-		if err := json.Unmarshal(raw, &body); err != nil {
-			t.Fatalf("%s: unmarshal config: %v", topic, err)
+		if !strings.HasPrefix(topic, "homeassistant/device/") {
+			t.Fatalf("%s: a non-empty payload on a topic that is not a device document; this bridge publishes one form", topic)
 		}
-		uid, _ := body["unique_id"].(string)
-		if uid == "" {
-			t.Fatalf("%s: config carries no unique_id", topic)
+		var doc map[string]any
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s: unmarshal document: %v", topic, err)
 		}
-		if prev, dup := out[uid]; dup {
-			t.Fatalf("unique_id %q published on two topics: %s and %s", uid, prev.Topic, topic)
-		}
-		out[uid] = goldenEntry{Topic: topic, Payload: body}
+		out[topic] = doc
 	}
 	return out
 }
@@ -492,59 +559,6 @@ func identityCases() []identityCase {
 	}}
 
 	return []identityCase{umlaut, accent, hyphen, packCollision}
-}
-
-// TestIdentityHazardPayloadsArePinned pins the discovery payloads for the four
-// inputs whose identity strings sit on a divergence between this bridge's
-// slugify and the slug of the library it is about to move onto, plus the one
-// of those that is a defect today.
-//
-// Which pinned rows are defects, named so a later step can be seen to fix
-// them rather than to have quietly changed them:
-//
-//   - "pack-serial-hyphen-vs-underscore" is F8 of the phase-5 measurement,
-//     and it is pinned broken. Packs "AB-12" and "AB_12" both slug to
-//     "ab_12", so the two rows carry distinct unique_ids —
-//     zendure2mqtt_SF2400AC0012345_pack_AB-12_soc_level and
-//     ..._pack_AB_12_soc_level — and the identical default_entity_id
-//     sensor.zendure_sf2400ac0012345_pack_ab_12_soc_level. Two entities
-//     compete for one entity_id and Home Assistant suffixes one of them
-//     without saying so. The shared library's topic.Slug preserves the
-//     hyphen specifically to avoid this collision class, so this is one row
-//     that is expected to change — deliberately, in its own commit, with
-//     this pin refreshed as the record of the fix.
-//
-//   - "non-german-accent" is the same class as the defect the library's own
-//     slug documents ("Größe → gr_e"): slugify has no mapping for "é", so
-//     the character is dropped and replaced by a separator. It is pinned as
-//     the wrong-but-shipped answer.
-//
-// Each case also carries the two virtual switches, which take their
-// default_entity_id seed from the same device name, so every divergence is
-// pinned on three platforms rather than one.
-//
-// The other two rows — "umlaut-u" and "hyphen-in-name" — are not defects.
-// They are correct, deliberate output that the shared library spells
-// differently, and pinning them is what makes the difference visible when the
-// swap is eventually taken.
-//
-// Refresh with:
-//
-//	go test ./internal/coordinator/ -run ArePinned -update-discovery-golden
-func TestIdentityHazardPayloadsArePinned(t *testing.T) {
-	got := map[string]goldenEntry{}
-	for _, c := range identityCases() {
-		for uid, e := range discoveryEntries(t, capturePublish(t, c.dev, c.report)) {
-			got[c.name+"/"+uid] = e
-		}
-	}
-
-	if *updateDiscoveryGolden {
-		writeGolden(t, goldenIdentityPath, got)
-		t.Logf("rewrote %s with %d payloads", goldenIdentityPath, len(got))
-		return
-	}
-	compareGolden(t, goldenIdentityPath, got)
 }
 
 // TestStateTopicsArePinned pins the sorted list of the 30 state topics the

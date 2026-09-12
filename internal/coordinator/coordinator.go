@@ -257,9 +257,13 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 	}
 	if c.deps.HASS != nil {
 		published := c.deps.HASS.Publish(ctx, dev, report, points)
-		// Clear any of our own retained discovery configs for this device that we
-		// no longer publish (entities removed/renamed across versions), so they do
-		// not linger as unavailable entities in Home Assistant.
+		// Clear any of our own retained discovery configs for this device
+		// that we no longer publish, so they do not linger as unavailable
+		// ghost entities in Home Assistant. Two kinds qualify since the
+		// device-document migration: a document for a device that is gone,
+		// and a per-entity config from a release before the migration whose
+		// entity is no longer in the new document — PublishBundle retracts
+		// the ones that are.
 		c.reconcileOrphans(ctx, dev.SN, published)
 	}
 	written := 0
@@ -407,15 +411,20 @@ func (c *Coordinator) sweepOrphans(ctx context.Context, sn string, published map
 			if !c.deps.HASS.IsOwnConfig(body) {
 				return // another writer's config in the same namespace
 			}
-			// Rebuilt through the library's own renderer for this fleet's
-			// topic form rather than by string concatenation, because it is
-			// the same function the eventual bundle migration has to retract
-			// with: 29 of 29 of this bridge's retained configs, measured.
-			topic := publisher.LegacyTopicByUniqueID(publisher.LegacyEntity{
-				Prefix:   prefix,
-				Platform: t.Platform,
-				UniqueID: t.ObjectID,
-			})
+			// Rebuilt through the library's own renderers rather than by
+			// string concatenation, for both forms this daemon owns. The
+			// per-entity one is the same function PublishBundle retracts
+			// with — 29 of 29 of this bridge's pre-migration configs,
+			// measured — so a topic the sweep judges and a topic the
+			// migration clears cannot be formatted differently.
+			topic := publisher.BundleConfigTopic(prefix, t.NodeID)
+			if !t.Bundle {
+				topic = publisher.LegacyTopicByUniqueID(publisher.LegacyEntity{
+					Prefix:   prefix,
+					Platform: t.Platform,
+					UniqueID: t.ObjectID,
+				})
+			}
 			if topic == "" {
 				return
 			}

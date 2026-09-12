@@ -2,25 +2,25 @@
 // Copyright (C) 2026 SukramJ
 
 // Package harender renders this bridge's Home Assistant entities through the
-// shared go-hamqtt model, in parallel with internal/hass and publishing
-// nothing.
+// shared go-hamqtt model.
 //
-// It is step 2 of ADR 0070 phase 5 — the phase-5 pilot measurement of
-// 2026-09-12, §7.2 — and it is the pilot's decisive experiment: the whole migration rests on the
-// claim that the shared library can reproduce what this bridge already
-// publishes, and that claim was derived from reading the library rather than
-// from running it. Either the bytes come out identical, in which case every
-// later step is a switch-over with a pin behind it, or they do not, in which
-// case the difference is a finding and this is the cheapest place in the
-// programme to find it.
+// It began as step 2 of ADR 0070 phase 5 — the phase-5 pilot measurement of
+// 2026-09-12, §7.2 — where it ran in parallel with internal/hass and
+// published nothing: the whole migration rested on the claim that the shared
+// library can reproduce what this bridge already publishes, and that claim
+// was derived from reading the library rather than from running it. It came
+// out byte-exact, 29 of 29 entities, and the pins in internal/coordinator are
+// that result.
 //
-// Nothing here publishes. There is no MQTT client, no runtime and no
-// Publisher: the package turns a [source.Device] plus a [model.Report] plus
-// the [process.Point]s the daemon already resolves into a [hamodel.Device],
-// a set of [hamodel.Entity] values and a [discovery.Context], and the tests
-// in internal/coordinator compare what the library renders from those against
-// the payloads PR #39 pinned. The production publish path does not import
-// this package.
+// Step 5 made it the production renderer. It is now the only thing that
+// describes this bridge's fleet to Home Assistant: [Renderer.Bundle] renders
+// the one retained device document per device that replaced the 29 retained
+// per-entity configs, and internal/hass publishes it. Nothing here publishes
+// — there is still no MQTT client, no runtime and no Publisher in this
+// package; it turns a [source.Device] plus a [model.Report] plus the
+// [process.Point]s the daemon already resolves into a [hamodel.Device], a set
+// of [hamodel.Entity] values, a [discovery.Context] and a
+// [discovery.Bundle].
 //
 // # What is deliberately preserved rather than improved
 //
@@ -503,20 +503,99 @@ func (Context) Availability(*hamodel.Device, hamodel.Entity) []discovery.Availab
 	return nil
 }
 
-// NodeID is the topic segment a device bundle is published under.
+// NodeID is the topic segment a device document is published under.
 //
 // It is the device identifier verbatim — the same string the device block's
-// identifiers carry — because this bridge has no node-id concept at all
-// today: its per-entity configs are keyed on the unique_id and have no
-// node-id level. There is consequently no installed spelling to preserve and
-// the device identifier is the one string that is already unique per device.
+// identifiers carry, "zendure2mqtt_<sn>" for a unit and
+// "zendure2mqtt_<sn>_pack_<packSN>" for a battery pack — and choosing it was
+// the one free decision ADR 0070 phase 5 step 5 had to make. The node id is a
+// topic segment this fleet has never had: the per-entity configs it replaces
+// are keyed on the unique_id and carry no node-id level, so there is no
+// installed spelling to preserve. Home Assistant keys its *device* registry
+// on `identifiers`, not on the node id, so nothing in the registry depends on
+// the choice.
 //
-// Nothing publishes this yet. It exists because [discovery.Validate] requires
-// a node id and refuses one that is not a legal topic segment, and validating
-// the rendered bundle is half of what this step was asked to settle.
+// Three properties are required of it and the device identifier has all
+// three. It is stable across restarts, because it is derived from the serial
+// the device reports and from the MQTT root and from nothing else — no
+// counter, no map iteration order, no boot time. It is distinct per device,
+// because the identifier is: a pack's identifier is its unit's plus
+// "_pack_<packSN>". And it is a legal single topic segment, which
+// [discovery.Validate] refuses one that is not. A re-keying later would
+// orphan the retained document topic — the old document would stay on the
+// broker announcing the same device from a second topic — so it is picked
+// once, here, and frozen with the rest of the identity.
+//
+// It is deliberately NOT slugged. The library's own default node id runs the
+// device identity through topic.Slug, which case-folds, so this fleet's
+// "zendure2mqtt_SF2400AC0012345" would become
+// "zendure2mqtt_sf2400ac0012345" — the same case-fold the measurement flagged
+// against unique_id. Here it would merely be ugly rather than destructive,
+// since nothing keys on it, but it would also disagree with every other
+// appearance of the serial in this bridge's tree: the state topics come from
+// process.StateTopic, whose serial is verbatim, and so are the identifiers.
+// One spelling of a serial, everywhere. Note also that topic.Slug and the
+// topic.Safe this bridge's own tree uses disagree — one more reason to take
+// neither and keep the identifier.
 func (Context) NodeID(dev *hamodel.Device) string {
 	if dev == nil {
 		return ""
 	}
 	return dev.Identity.UID()
+}
+
+// OriginName is the `origin.name` every device document carries.
+//
+// Home Assistant requires an origin block on a device document — it is the
+// one key of the migration that cannot be preserved, because the per-entity
+// configs this bridge published carried none and [discovery.Validate] refuses
+// a document without `origin.name`. It is additive and identity-neutral: Home
+// Assistant shows it as the integration that announced the device and keys
+// nothing on it.
+const OriginName = "go-zendure2mqtt"
+
+// Origin is the origin block this bridge publishes.
+//
+// Name only, deliberately. [discovery.Origin] also carries `sw_version` and
+// `support_url`, and this bridge's own version is the obvious candidate for
+// the first — but it is stamped at link time, so the retained document's
+// bytes would then depend on how the binary was linked, the pinned payload
+// would depend on it too, and every release would rewrite two retained
+// documents for no operator-visible gain. The build banner already says the
+// version, once, at boot.
+func Origin() discovery.Origin { return discovery.Origin{Name: OriginName} }
+
+// Bundle renders the retained Home Assistant device document for one of this
+// bridge's devices: the main unit when packSN is empty, that unit's battery
+// sub-device otherwise.
+//
+// points may hold the whole report's points; only the ones belonging to
+// packSN are taken, in arrival order, so a caller need not partition first.
+// A sub-device is not a component of its parent's document — it is a device,
+// with its own node id and its own retained document — which is why this
+// takes one packSN rather than rendering the hierarchy in one call.
+//
+// It returns nil without an error when the device mints no entity at all. A
+// document with an empty `components` map is not a device with no entities,
+// it is a document Home Assistant reads as "remove every entity of this
+// device", and this bridge must never publish one by accident.
+func (r Renderer) Bundle(
+	dev source.Device,
+	report *model.Report,
+	packSN string,
+	points []process.Point,
+) (*discovery.Bundle, error) {
+	entities := make([]hamodel.Entity, 0, len(points))
+	for _, p := range points {
+		if p.PackSN != packSN {
+			continue
+		}
+		if e, ok := r.Entity(dev, p); ok {
+			entities = append(entities, e)
+		}
+	}
+	if len(entities) == 0 {
+		return nil, nil
+	}
+	return discovery.Render(r.Context(), r.Device(dev, report, packSN), entities, Origin())
 }

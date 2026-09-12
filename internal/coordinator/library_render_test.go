@@ -173,6 +173,38 @@ func mustCanonical(body map[string]any) string {
 	return string(raw)
 }
 
+// legacyPins loads the frozen per-entity pin — the 29 retained configs every
+// release before ADR 0070 phase 5 step 5 published, captured from the
+// production code before one byte moved — split into the unit's rows and the
+// battery pack's.
+//
+// The tests below compare the library's per-entity rendering against *that*
+// pin rather than against the current one, and they must: the current pin is
+// the device-document form this bridge publishes now, and what these tests
+// prove is the migration's premise — that the shared model reproduces what
+// the installed base is running on, byte for byte, 29 of 29. That question
+// does not change when the topic does, and the answer is what makes the move
+// a re-addressing rather than a rewrite.
+func legacyPins(t *testing.T) (unit, pack map[string]goldenEntry) {
+	t.Helper()
+	var all map[string]goldenEntry
+	readGoldenJSON(t, legacyConfigPath, &all)
+	if len(all) != 29 {
+		t.Fatalf("%s holds %d rows, want 29", legacyConfigPath, len(all))
+	}
+	return splitByPack(all)
+}
+
+// legacyAll is [legacyPins] unsplit.
+func legacyAll(t *testing.T) map[string]goldenEntry {
+	t.Helper()
+	unit, pack := legacyPins(t)
+	for uid, e := range pack {
+		unit[uid] = e
+	}
+	return unit
+}
+
 // TestLibraryRenderReproducesThePinnedPayloads is the decisive experiment of
 // ADR 0070 phase 5: the shared go-hamqtt model, rendering this bridge's 29
 // entities, produces the exact payloads and the exact retained topics PR #39
@@ -204,9 +236,7 @@ func TestLibraryRenderReproducesThePinnedPayloads(t *testing.T) {
 	rendered := renderLibrary(t, goldenUnit(), goldenReport())
 	unit, pack := splitByPack(rendered)
 
-	var wantUnit, wantPack map[string]goldenEntry
-	readGoldenJSON(t, goldenUnitPath, &wantUnit)
-	readGoldenJSON(t, goldenPackPath, &wantPack)
+	wantUnit, wantPack := legacyPins(t)
 
 	for _, tc := range []struct {
 		name string
@@ -265,7 +295,7 @@ func TestLibraryRenderReproducesThePinnedPayloads(t *testing.T) {
 // rather than one.
 func TestLibraryRenderReproducesTheIdentityHazards(t *testing.T) {
 	var want map[string]goldenEntry
-	readGoldenJSON(t, goldenIdentityPath, &want)
+	readGoldenJSON(t, legacyIdentityPath, &want)
 
 	got := map[string]goldenEntry{}
 	for _, c := range identityCases() {
@@ -383,13 +413,7 @@ func TestLibraryRenderReproducesTheCommandTopics(t *testing.T) {
 // publisher.LegacyTopicByUniqueID when step 5 wires the runtime up, and not
 // to LegacyTopicByObjectID and not left unset.
 func TestLegacyTopicFormIsKeyedOnUniqueID(t *testing.T) {
-	var pinned map[string]goldenEntry
-	readGoldenJSON(t, goldenUnitPath, &pinned)
-	var packPins map[string]goldenEntry
-	readGoldenJSON(t, goldenPackPath, &packPins)
-	for uid, e := range packPins {
-		pinned[uid] = e
-	}
+	pinned := legacyAll(t)
 
 	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
 	ctx := r.Context()
@@ -457,7 +481,7 @@ func TestLegacyTopicFormIsKeyedOnUniqueID(t *testing.T) {
 // this bridge publishes a key Home Assistant is silently dropping, or the
 // library's schema view is wrong for these four platforms. Report which.
 func TestPinnedPayloadsPassTheLibraryValidator(t *testing.T) {
-	for _, path := range []string{goldenUnitPath, goldenPackPath, goldenIdentityPath} {
+	for _, path := range []string{legacyConfigPath, legacyIdentityPath} {
 		var pins map[string]goldenEntry
 		readGoldenJSON(t, path, &pins)
 
@@ -604,13 +628,7 @@ func TestRenderedBundleValidates(t *testing.T) {
 // discovery tree, which is the failure mode the library refuses to risk by
 // guessing.
 func TestSupersededTopicsRetractsThePinnedConfigs(t *testing.T) {
-	var want map[string]goldenEntry
-	readGoldenJSON(t, goldenUnitPath, &want)
-	var packPins map[string]goldenEntry
-	readGoldenJSON(t, goldenPackPath, &packPins)
-	for uid, e := range packPins {
-		want[uid] = e
-	}
+	want := legacyAll(t)
 	wantTopics := make([]string, 0, len(want))
 	for _, e := range want {
 		wantTopics = append(wantTopics, e.Topic)
@@ -670,8 +688,7 @@ func TestSupersededTopicsRetractsThePinnedConfigs(t *testing.T) {
 // rows are the two the library's own defaults would have produced if
 // internal/harender had not overridden them.
 func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
-	var want map[string]goldenEntry
-	readGoldenJSON(t, goldenUnitPath, &want)
+	want, _ := legacyPins(t)
 	base := func() map[string]goldenEntry {
 		unit, _ := splitByPack(renderLibrary(t, goldenUnit(), goldenReport()))
 		return unit

@@ -22,6 +22,103 @@
 
 ### Changed
 
+- **BREAKING (discovery format): Home Assistant discovery moves from 29
+  retained per-entity configs to one retained device document per device.**
+  ADR 0070 phase 5, step 5 — the last step of the pilot and the only one that
+  moves a published byte.
+
+  **Old format:** `homeassistant/<platform>/<unique_id>/config`, one retained
+  message per entity, each repeating the full `device` block — 29 messages for
+  one SolarFlow with one battery pack.
+
+  **New format:** `homeassistant/device/<node_id>/config`, one retained
+  message per Home Assistant device, carrying the device block once, an
+  `origin` block, and every one of that device's entities as a component. The
+  node id is the device identifier this bridge already published —
+  `zendure2mqtt_<sn>` for the unit, `zendure2mqtt_<sn>_pack_<packSn>` for each
+  battery pack. Two messages replace 29, and an update to the entity set is
+  one atomic write instead of 29 independent ones. Home Assistant 2024.11 or
+  newer is required from this release on.
+
+  **What you will see.** Nothing, if the upgrade goes as intended. On the
+  first start after the upgrade the bridge retracts the old per-entity configs
+  and then publishes the device documents, in that order, and your entities
+  stay exactly where they were.
+
+  **Your history, names, icons and automations survive**, and the reason is
+  that nothing was re-keyed. `unique_id` is byte-identical to the previous
+  release, and `unique_id` is what Home Assistant keys its entity registry
+  on: an entity whose unique id is unchanged keeps its entity id, its custom
+  name, its icon, its area, its device assignment, its long-term statistics
+  and every automation and dashboard that names it. ADR 0070 permits the
+  bridges a clean break here and this one declines it — which is why this
+  bridge was chosen as the pilot: identity frozen means the runtime is proved
+  on an installed base without confounding. `default_entity_id`,
+  `state_topic`, `command_topic`, `availability_topic`, `payload_available`,
+  `payload_not_available`, the device `identifiers` and `via_device` are
+  byte-identical too. The only additions to any payload are `origin` (which
+  Home Assistant requires on a device document) and each component's
+  `platform` (which the old topic carried in its second segment). There is no
+  migration to run and nothing to delete by hand.
+
+  **The old configs are cleared for you**, and the order matters: the
+  retraction comes first. Home Assistant refuses a device document while a
+  per-entity config for the same `unique_id` is still retained, and the only
+  evidence is one `WARNING [mqtt.entity] Received a conflicting MQTT
+  discovery message` line in its log — the entities simply would not appear.
+  The retraction is therefore not a tidy-up, it is the precondition; a device
+  whose retraction fails has its document withheld and retried on the next
+  poll rather than published into a conflict. Per-entity configs left behind
+  by entities that were removed or renamed in some *earlier* release are
+  cleared by the orphan sweep on the first start, so no duplicate ghost
+  entities are left standing either.
+
+  **If the first start is interrupted between the two steps**, the affected
+  device's entities are briefly *absent* rather than unavailable. Restarting
+  the bridge restores them; nothing is lost.
+
+  **Downgrading needs one manual step.** Going back to 0.7.x or earlier is
+  not just installing the old version: the retained device documents stay on
+  the broker, and an older bridge republishing per-entity configs is refused
+  by Home Assistant for exactly the same reason, symmetrically, with the same
+  single log line. Before downgrading, clear the retained documents — publish
+  an empty retained payload to `homeassistant/device/zendure2mqtt_<sn>/config`
+  and to `homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config` for
+  every device and pack (`mosquitto_pub -t <topic> -r -n`). Because nothing
+  was re-keyed, the old release then re-adopts the same entities with their
+  history intact.
+
+  **`MQTT_TOPIC` must not be changed.** Not new, but this is the release to
+  say it: it namespaces every `unique_id`, so changing it orphans every
+  entity *and* leaves the old retained configs unrecognisable to the cleanup,
+  which can then never remove them.
+
+- **`internal/harender` is now the production renderer.** The parallel
+  rendering path built to prove the shared go-hamqtt model reproduces this
+  bridge's payloads byte-for-byte — 29 of 29 entities, identity frozen,
+  publishing nothing — is the only renderer left. `internal/hass` keeps the
+  identity formulas the migration froze (`UniqueID`, `DeviceName`,
+  `EntityObjectID`) and the ownership rules the orphan sweep needs, and
+  publishes what harender renders through
+  `publisher.Runtime.PublishBundle` — which is what implements the
+  retract-then-publish order and aborts before the document if a retraction
+  fails. The hand-rolled payload builder it replaces is gone.
+
+  The pins moved with it, and only in the two ways this step is allowed to
+  move them. `testdata/discovery_unit.json` and `discovery_pack.json` now
+  record each entity's effective config — its component body plus the
+  document's device and origin blocks — under the document's topic;
+  `testdata/discovery_bundles.json` pins the retained documents verbatim; and
+  `testdata/legacy_per_entity_configs.json` freezes the 29 pre-migration
+  configs read-only, as the record of the installed base every identity
+  assertion is still made against. `testdata/state_topics.json` is unchanged,
+  byte for byte — the state plane did not move.
+
+- **The orphan sweep recognises both discovery forms.** It has to: the device
+  documents are the current form, and the per-entity configs of every earlier
+  release are still retained on every installed broker. A sweep blind to
+  either would leave that form standing forever.
+
 - **Birth, Last Will and the orphan sweep now run on
   `publisher.Runtime`.** ADR 0070 phase 5, step 4. Discovery configs are
   published through the runtime rather than straight to the MQTT client, so
@@ -68,14 +165,22 @@
   logged and dropped, so while the bridge is up and a device is unplugged
   its entities stay *available*, showing the last value they ever saw. The
   shared library has the vocabulary for it (`model.LevelDevice` plus
-  `AvailabilityPublisher.Device`) and it is the single biggest
-  user-visible improvement left in this migration — but it is not a
-  refactor. A device availability topic is a topic no installed config
-  names, so publishing one changes nothing in Home Assistant until all 29
-  retained configs also gain an `availability` entry, which is a payload
-  change and moves every pinned fixture. It therefore gets its own step and
-  its own migration note, after the discovery bundle, and the flat
-  `availability_topic` every entity names today keeps working either way.
+  `AvailabilityPublisher.Device`) and it is the single biggest user-visible
+  improvement left in this migration.
+
+  It was deferred *to* the device-document step, and it is deferred once more
+  — now to its own release, which is the last time it can be. The reason has
+  changed. Before, it was that an `availability` entry per entity moves every
+  pinned fixture; now the fixtures have moved anyway, so that argument is
+  spent. What replaces it is that this release's entire claim is that the
+  payload diff contains the topic shape and the `origin` block and nothing
+  else — that claim is checked field by field, and it is what makes the one
+  step that touches an installed base reviewable. Availability in the same
+  diff would have destroyed it. It is also not only a discovery change: a
+  device availability topic needs something to publish to it, and the backend
+  produces no reachability signal today, so the work is a state-plane change
+  as much as a payload one. The flat `availability_topic` every entity names
+  keeps working either way.
 - **F1, F3, F5, F7, F8** are unchanged, as recorded in the measurement. In
   particular a discovery config is still published once per process and
   never updated however much it changes (F1): routing configs through the
@@ -83,6 +188,14 @@
   the already-sent guard is kept deliberately so that a device reporting a
   field intermittently cannot flap its retained config on every poll. That
   fix wants a monotonic enrichment rule, and its own commit.
+
+  One consequence of one document per device is worth naming rather than
+  discovering: when a *new* entity appears mid-process its device's whole
+  document is rewritten, so that single write also carries the current
+  bodies of its siblings. That narrows F1 — it does not fix it, and the
+  steady state is still that the first report of a process decides the
+  retained document for the rest of it. There is one document per device; it
+  cannot be written per entity.
 
 ### Changed
 

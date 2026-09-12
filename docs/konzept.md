@@ -70,7 +70,8 @@ zendure2mqtt/<sn>/static/<key>/state         rssi, Identität
 zendure2mqtt/<sn>/battery/<packSn>/<key>/state
 zendure2mqtt/<sn>/<group>/<key>/set          ← Befehlstopic
 zendure2mqtt/bridge/status                   online|offline (LWT, retained)
-homeassistant/<platform>/zendure2mqtt_<sn>_<key>/config   retained Discovery
+homeassistant/device/zendure2mqtt_<sn>/config            retained Discovery (ein Dokument je Gerät)
+homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config   dito je Batteriepack
 ```
 
 ## 4. Property-/Steuerungs-Modell (SolarFlow 2400 AC)
@@ -118,6 +119,14 @@ Alles deklarativ in [`zendure.yaml`](../zendure.yaml).
   auf ein anderes Gerät und benennt `entity_id`s nicht um. Schema-Änderungen
   erfordern ein einmaliges Zurücksetzen: retained `homeassistant/.../config`
   leeren, dann neu publizieren.
+- **Discovery-Format:** Geräte-basiert, ein retained Dokument je HA-Gerät unter
+  `homeassistant/device/<node_id>/config` (node id = Device-Identifier). Es hat
+  die 29 Einzel-Configs unter `homeassistant/<platform>/<unique_id>/config`
+  ersetzt (ADR 0070 Phase 5, Schritt 5); `unique_id` und `default_entity_id`
+  sind unverändert, deshalb bleiben Historie, Namen und Automationen erhalten.
+  **Reihenfolge ist zwingend:** erst die alten Configs zurückziehen, dann das
+  Dokument publizieren — Home Assistant verweigert sonst das Dokument und
+  schreibt dazu nur eine `WARNING [mqtt.entity]`-Zeile.
 
 ## 5. Cloud-Login (App-Token-Weg)
 

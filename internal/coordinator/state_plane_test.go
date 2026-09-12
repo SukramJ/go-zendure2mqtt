@@ -13,6 +13,7 @@ import (
 	"github.com/SukramJ/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )
@@ -36,11 +37,12 @@ func newStatePlaneRig(t *testing.T) *statePlaneRig {
 	dev := goldenUnit()
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
-		Cfg:        cfg,
-		Backend:    &goldenBackend{devices: []source.Device{dev}},
-		MQTT:       pub,
-		Catalog:    goldenCatalog(t),
-		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, rt, discardLogger()),
+		Cfg:     cfg,
+		Backend: &goldenBackend{devices: []source.Device{dev}},
+		MQTT:    pub,
+		Catalog: goldenCatalog(t),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic,
+			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
 		Logger:     discardLogger(),
 		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
