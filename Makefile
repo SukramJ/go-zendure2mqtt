@@ -113,6 +113,62 @@ test-cover: ## run tests + coverage report
 	CGO_ENABLED=1 $(GO) test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -20
 
+# Per-package coverage gate, deliberately per package rather than on a
+# merged total: a single total lets one well-tested package hide a package
+# nothing executes, which is the failure mode this tree actually has.
+#
+# COVER_MIN is the floor for any package not listed in COVER_MIN_OVERRIDES.
+# 25 is chosen to be green on main today with margin, not aspirational — a
+# gate that arrives red is worse than no gate, because the next person
+# cannot tell their finding from the pre-existing ones. The floor clears
+# every tested package with room to spare; the thinnest is
+# internal/coordinator at 32.3%, and that margin is deliberate — the ADR
+# 0070 work is actively adding rendering paths in and around it.
+#
+# COVER_MIN_OVERRIDES pins every package that is below the floor today at
+# (the floor of) its current number. That makes this a ratchet rather than a
+# threshold: those packages cannot get *worse*, and raising one is a matter
+# of deleting its line. Six of them have no test file at all
+# (cmd/zendure2mqtt-util, internal/source, internal/state, internal/version,
+# internal/zendure/local, internal/zendure/model) — the pin records that as
+# a known state instead of letting a merged total paper over it.
+COVER_MIN ?= 25
+COVER_MIN_OVERRIDES ?= \
+	cmd/zendure2mqtt=0 \
+	cmd/zendure2mqtt-util=0 \
+	internal/source=0 \
+	internal/state=0 \
+	internal/version=0 \
+	internal/zendure/cloud=8 \
+	internal/zendure/local=0 \
+	internal/zendure/model=0
+
+.PHONY: cover-check
+cover-check: ## per-package coverage gate (COVER_MIN percent, default 25); NOT part of `check`
+	@status=0; \
+	for pkg in $$($(GO) list ./...); do \
+	  suffix=$${pkg#$(MODULE)/}; \
+	  min="$(COVER_MIN)"; \
+	  for ov in $(COVER_MIN_OVERRIDES); do \
+	    if [ "$${ov%%=*}" = "$$suffix" ]; then min="$${ov#*=}"; fi; \
+	  done; \
+	  profile=$$(mktemp); log=$$(mktemp); \
+	  if ! CGO_ENABLED=1 $(GO) test -race -count=1 -timeout=120s -covermode=atomic \
+	      -coverprofile="$$profile" "$$pkg" >"$$log" 2>&1; then \
+	    echo "FAIL $$suffix (test failure)"; cat "$$log"; status=1; \
+	    rm -f "$$profile" "$$log"; continue; \
+	  fi; \
+	  total=$$($(GO) tool cover -func="$$profile" | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
+	  rm -f "$$profile" "$$log"; \
+	  if [ -z "$$total" ]; then total=0; fi; \
+	  if awk -v t="$$total" -v m="$$min" 'BEGIN{exit !(t+0>=m+0)}'; then \
+	    printf "ok   %-34s %5s%% >= %s%%\n" "$$suffix" "$$total" "$$min"; \
+	  else \
+	    printf "FAIL %-34s %5s%% <  %s%%\n" "$$suffix" "$$total" "$$min"; status=1; \
+	  fi; \
+	done; \
+	exit $$status
+
 .PHONY: vet
 vet: ## run go vet
 	$(GO) vet ./...

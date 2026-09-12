@@ -142,6 +142,25 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -race -count=1 -timeout=120s ./...
 
+  # Per-package, not a merged total: one well-tested package must not be
+  # able to hide a package nothing executes. The floor (COVER_MIN) plus the
+  # per-package pins in the Makefile make this a ratchet — see the comment
+  # there for why each number is what it is.
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: per-package coverage floor
+        env:
+          # Coverage profiles come from -race runs, which need CGo.
+          CGO_ENABLED: "1"
+        run: make cover-check
+
   build:
     name: build
     runs-on: ubuntu-latest
