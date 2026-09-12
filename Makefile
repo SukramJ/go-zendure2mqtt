@@ -113,6 +113,29 @@ test-cover: ## run tests + coverage report
 	CGO_ENABLED=1 $(GO) test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -20
 
+# Fuzz targets live in ./internal/process: sanitizeSegment and validPackSN
+# parse device-supplied strings into MQTT topic levels and HA unique_ids, and
+# a unique_id is what Home Assistant keys its entity registry on — with no
+# migration path once published. Seed corpora are committed under
+# internal/process/testdata/fuzz/, so the seeds also replay as a plain
+# regression table under `make test`.
+FUZZ_PKG ?= ./internal/process
+FUZZTIME ?= 5m
+
+.PHONY: fuzz-smoke
+fuzz-smoke: ## run every Fuzz target in $(FUZZ_PKG) for 10s each (CI smoke gate)
+	@for fn in $$($(GO) test $(FUZZ_PKG) -list '^Fuzz' | grep '^Fuzz'); do \
+	  echo "== fuzz-smoke: $$fn (10s) =="; \
+	  $(GO) test $(FUZZ_PKG) -run '^$$' -fuzz "^$$fn$$" -fuzztime=10s; \
+	done
+
+.PHONY: fuzz
+fuzz: ## run every Fuzz target in $(FUZZ_PKG) for FUZZTIME (default 5m; local/periodic)
+	@for fn in $$($(GO) test $(FUZZ_PKG) -list '^Fuzz' | grep '^Fuzz'); do \
+	  echo "== fuzz: $$fn (fuzztime=$(FUZZTIME)) =="; \
+	  $(GO) test $(FUZZ_PKG) -run '^$$' -fuzz "^$$fn$$" -fuzztime=$(FUZZTIME); \
+	done
+
 # Per-package coverage gate, deliberately per package rather than on a
 # merged total: a single total lets one well-tested package hide a package
 # nothing executes, which is the failure mode this tree actually has.

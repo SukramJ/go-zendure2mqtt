@@ -161,6 +161,22 @@ jobs:
           CGO_ENABLED: "1"
         run: make cover-check
 
+  # 10s per target — a cheap regression net between longer local `make fuzz`
+  # runs, not an attempt to find everything. The corpora under
+  # internal/process/testdata/fuzz/ are committed, so a crash found here is
+  # reproducible by committing the failing input as a new seed.
+  fuzz-smoke:
+    name: fuzz-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: fuzz smoke (10s per ./internal/process Fuzz target)
+        run: make fuzz-smoke
+
   build:
     name: build
     runs-on: ubuntu-latest
