@@ -2,6 +2,88 @@
 
 ## What's Changed
 
+### Added
+
+- **Home Assistant's birth message is now watched, so a broker that loses
+  its retained store no longer leaves Home Assistant empty until the daemon
+  is restarted.** This bridge had no `<hass_base>/status` subscription at
+  all — all four of its `Subscribe` sites were accounted for and none was
+  that one. Discovery configs are retained, so a Home Assistant restart was
+  always survived; a broker restarted without persistence, or one whose
+  retained store was cleared, was not, and nothing in the logs said so.
+  `publisher.Runtime.WatchBirth` now replays every config this process has
+  declared on the rising edge of that message, on a worker goroutine rather
+  than inline on the read loop. This was F6 of the ADR 0070 phase-5
+  measurement.
+
+  Adopting it adds a *subscription*; the replay it performs publishes the
+  same retained configs this process already wrote, byte for byte, and only
+  when Home Assistant announces itself.
+
+### Changed
+
+- **Birth, Last Will and the orphan sweep now run on
+  `publisher.Runtime`.** ADR 0070 phase 5, step 4. Discovery configs are
+  published through the runtime rather than straight to the MQTT client, so
+  the runtime knows what this process claims — which is what the orphan
+  sweep compares against and what the birth resync replays.
+
+  - **The Last Will is no longer a literal.** It is read from
+    `publisher.Runtime.Will()`, which returns the same topic and the same
+    payload the online/offline announcements write. A will whose topic no
+    published entity references is the measured defect of two sibling
+    bridges — the broker writes "offline" where nothing reads it and every
+    entity stays available forever — and this bridge already had it right;
+    now it cannot get it wrong. `<root>/bridge/status` is stated once, in
+    `coordinator.BridgeStatusTopic`, and pinned against the shared model's
+    `Layout.Bridge()`.
+  - **The orphan sweep is the library's snapshot window**, which owns the
+    parts that were hard: one window at a time per process (two windows on
+    one filter left the second handler installed over the first and the
+    first teardown unsubscribed for both), the parsing of all three
+    discovery topic forms, and the claim check that keeps a config still
+    inside its own publish call from being judged an orphan. The pass is
+    report-only and this bridge retracts what it chose, because its
+    ownership rule is the stronger one: the retained *payload* must carry a
+    `unique_id` in this bridge's namespace and a state topic under its MQTT
+    root, and a pass that judged on the topic alone would have widened what
+    this daemon is willing to delete from a shared discovery tree. Scoping
+    to one device is kept, and a config the runtime still claims is now
+    excluded as well — a safety net the hand-rolled version did not have.
+
+  **Nothing on the wire moved.** Same config topics, same config payloads,
+  same retraction (an empty retained payload), same announcements
+  (`online`/`offline`, retained) and the same QoS 0 throughout —
+  `publisher.QoSAtMostOnce`, stated, because the library reads a zero QoS as
+  *unset* and resolves it to 1. The four pinned fixtures were not
+  regenerated and hold byte-for-byte, and a new pin reads the QoS and the
+  retain flag off the transport call for every publish the bridge makes.
+
+  Home Assistant discovery must be enabled for the birth subscription; the
+  availability announcements and the Last Will are unconditional as before.
+
+### Not fixed, and why
+
+- **F4 — there is no per-device availability.** A failed poll is still
+  logged and dropped, so while the bridge is up and a device is unplugged
+  its entities stay *available*, showing the last value they ever saw. The
+  shared library has the vocabulary for it (`model.LevelDevice` plus
+  `AvailabilityPublisher.Device`) and it is the single biggest
+  user-visible improvement left in this migration — but it is not a
+  refactor. A device availability topic is a topic no installed config
+  names, so publishing one changes nothing in Home Assistant until all 29
+  retained configs also gain an `availability` entry, which is a payload
+  change and moves every pinned fixture. It therefore gets its own step and
+  its own migration note, after the discovery bundle, and the flat
+  `availability_topic` every entity names today keeps working either way.
+- **F1, F3, F5, F7, F8** are unchanged, as recorded in the measurement. In
+  particular a discovery config is still published once per process and
+  never updated however much it changes (F1): routing configs through the
+  runtime's payload-comparing gate would have fixed it as a side effect, and
+  the already-sent guard is kept deliberately so that a device reporting a
+  field intermittently cannot flap its retained config on every poll. That
+  fix wants a monotonic enrichment rule, and its own commit.
+
 ### Changed
 
 - **State is no longer re-published when it has not changed.** Every point

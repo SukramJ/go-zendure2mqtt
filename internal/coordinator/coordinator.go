@@ -41,6 +41,17 @@ type Deps struct {
 	State   *state.Store    // nil when the diagnostic web UI is disabled
 	Logger  *slog.Logger
 
+	// HARuntime owns this daemon's Home Assistant plane: the retained
+	// discovery configs it has published, the bridge availability marker
+	// its Last Will clears, the Home Assistant birth subscription and the
+	// orphan sweep. Required.
+	//
+	// Built at the composition root for the same reason as [Deps.StatePlane]
+	// — it states QoS 0 — and additionally because [publisher.Runtime.Will]
+	// has to be read before the MQTT client is constructed: the will is part
+	// of CONNECT.
+	HARuntime *publisher.Runtime
+
 	// StatePlane writes every point's retained state value. Required.
 	//
 	// It is built at the composition root (cmd/zendure2mqtt) rather than
@@ -68,7 +79,6 @@ type Coordinator struct {
 	discMu      sync.Mutex        // guards lastDiscSig
 	lastDiscSig map[string]string // sn -> signature of the last published config-topic set
 	reconciling sync.Map          // sn -> struct{}; in-flight orphan-reconcile gate, one per device
-	reconcileMu sync.Mutex        // serializes reconcile goroutines: they share one MQTT config filter
 }
 
 // New constructs a Coordinator.
@@ -109,6 +119,18 @@ func New(deps Deps) *Coordinator {
 // as-is here.
 func CommandFilter(root string) string { return root + "/+/+/+/set" }
 
+// BridgeStatusTopic is this daemon's own availability topic,
+// `<root>/bridge/status`: the topic its Last Will clears, the topic
+// PublishOnline and PublishOffline write, and the topic every published
+// entity names as its availability_topic.
+//
+// Exported because those four readers used to be four string literals, and
+// the library refuses a Config.StatusTopic that disagrees with its Layout's
+// Bridge() precisely because a typo there greys out an entire fleet with
+// nothing on the wire naming the cause. One formula, checked against
+// harender.Layout.Bridge in TestBridgeStatusTopicIsOneString.
+func BridgeStatusTopic(root string) string { return root + "/bridge/status" }
+
 // Run subscribes to command topics and drives the backend until ctx ends.
 func (c *Coordinator) Run(ctx context.Context) error {
 	c.runCtx = ctx
@@ -121,7 +143,27 @@ func (c *Coordinator) Run(ctx context.Context) error {
 		// command would be silently dropped until restart. Retry in the
 		// background until it lands or the daemon stops.
 		c.logger.Warn("coordinator.subscribe_failed", slog.String("filter", setFilter), slog.String("err", err.Error()))
-		go c.retrySubscribe(ctx, setFilter)
+		go c.retrySubscribe(ctx, "coordinator.subscribe", setFilter, c.subscribeCommands)
+	}
+
+	// Home Assistant's own birth message. Discovery configs are retained, so
+	// an HA restart is survived without this — but a broker restarted without
+	// persistence, or one whose retained store is cleared, leaves Home
+	// Assistant with no entities at all until this daemon is restarted, and
+	// nothing in the logs says so. That was F6 of the ADR 0070 phase-5
+	// measurement: all four of this bridge's Subscribe sites were accounted
+	// for and none was <hass_base>/status.
+	//
+	// WatchBirth replays the configs this runtime declared on the rising edge
+	// of that message, off the read loop — the replay is one blocking
+	// retained publish per config, each waiting on an acknowledgement only
+	// the read loop could deliver, so doing it inline would self-deadlock.
+	// Only with discovery enabled: there is nothing to replay otherwise.
+	if c.deps.HASS != nil {
+		if err := c.watchBirth(ctx); err != nil {
+			c.logger.Warn("coordinator.birth_subscribe_failed", slog.String("err", err.Error()))
+			go c.retrySubscribe(ctx, "coordinator.birth_subscribe", publisher.BirthTopic(c.deps.HARuntime.Prefix()), c.watchBirth)
+		}
 	}
 
 	return c.deps.Backend.Run(ctx, func(r source.Reading) {
@@ -132,11 +174,17 @@ func (c *Coordinator) Run(ctx context.Context) error {
 // setSubscribeMaxBackoff caps the /set re-subscribe retry interval.
 const setSubscribeMaxBackoff = 30 * time.Second
 
-// retrySubscribe re-issues the /set subscription with capped backoff until it
+// retrySubscribe re-issues one subscription with capped backoff until it
 // succeeds or ctx is cancelled. A duplicate success is idempotent (the client
 // replaces the handler in place), and once registered go-mqtt replays it across
 // all later reconnects.
-func (c *Coordinator) retrySubscribe(ctx context.Context, filter string) {
+//
+// It takes the subscribe call rather than the filter because both of this
+// daemon's Home Assistant subscriptions need it for the same reason and the
+// birth one goes through the library: a failed initial subscribe is not
+// replayed on a later reconnect, so without a retry the command plane would be
+// silently dead — and the birth resync silently absent — until a restart.
+func (c *Coordinator) retrySubscribe(ctx context.Context, event, filter string, subscribe func(context.Context) error) {
 	backoff := time.Second
 	for {
 		select {
@@ -144,12 +192,23 @@ func (c *Coordinator) retrySubscribe(ctx context.Context, filter string) {
 			return
 		case <-time.After(backoff):
 		}
-		if _, err := c.deps.MQTT.Subscribe(ctx, filter, mqtt.QoS0, c.handleSet); err == nil {
-			c.logger.Info("coordinator.subscribe_recovered", slog.String("filter", filter))
+		if err := subscribe(ctx); err == nil {
+			c.logger.Info(event+"_recovered", slog.String("filter", filter))
 			return
 		}
 		backoff = min(backoff*2, setSubscribeMaxBackoff)
 	}
+}
+
+// subscribeCommands registers the /set handler.
+func (c *Coordinator) subscribeCommands(ctx context.Context) error {
+	_, err := c.deps.MQTT.Subscribe(ctx, CommandFilter(c.root), mqtt.QoS0, c.handleSet)
+	return err
+}
+
+// watchBirth registers the Home Assistant birth subscription.
+func (c *Coordinator) watchBirth(ctx context.Context) error {
+	return c.deps.HARuntime.WatchBirth(ctx)
 }
 
 // PublishOnline (re)announces bridge availability. Wired to OnConnect.
@@ -163,8 +222,7 @@ func (c *Coordinator) PublishOnline(ctx context.Context) {
 	// the library's Reset documentation asks a consumer to pair it with.
 	c.deps.StatePlane.Reset()
 
-	topic := c.root + "/bridge/status"
-	if err := c.deps.MQTT.Publish(ctx, topic, []byte("online"), mqtt.QoS0, true); err != nil {
+	if err := c.deps.HARuntime.AnnounceOnline(ctx); err != nil {
 		c.logger.Warn("coordinator.online_failed", slog.String("err", err.Error()))
 	}
 }
@@ -173,8 +231,7 @@ func (c *Coordinator) PublishOnline(ctx context.Context) {
 // only fires on an ungraceful disconnect (crash / network drop), so a clean
 // stop must announce offline explicitly or the retained status stays online.
 func (c *Coordinator) PublishOffline(ctx context.Context) {
-	topic := c.root + "/bridge/status"
-	if err := c.deps.MQTT.Publish(ctx, topic, []byte("offline"), mqtt.QoS0, true); err != nil {
+	if err := c.deps.HARuntime.AnnounceOffline(ctx); err != nil {
 		c.logger.Warn("coordinator.offline_failed", slog.String("err", err.Error()))
 	}
 }
@@ -267,9 +324,10 @@ const reconcileCollectWindow = 2 * time.Second
 // It runs only when the device's config-topic set changed (configs are
 // retained, so an unchanged poll need not reconcile), runs asynchronously, and
 // is gated per device: a re-entrant reconcile for the same serial is skipped.
-// The subscribe spans the whole discovery prefix because the serial is not its
-// own MQTT level; ownership and device scoping are enforced in code via
-// [hass.Discovery.OrphanConfigs], so other integrations' and other devices'
+// The snapshot spans the whole discovery prefix because the serial is not its
+// own MQTT level; ownership and device scoping are enforced in code, twice —
+// on the topic by [hass.OwnsDeviceConfigTopic] and on the payload by
+// [hass.Discovery.IsOwnConfig] — so other integrations' and other devices'
 // configs are never touched.
 func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published map[string]bool) {
 	if c.deps.HASS == nil {
@@ -290,70 +348,127 @@ func (c *Coordinator) reconcileOrphans(ctx context.Context, sn string, published
 	// The reconcile outlives this publish call (it collects for a few seconds),
 	// so detach from the caller's cancellation/deadline — a re-read's short-lived
 	// context must not abort it — while keeping the request's values. The
-	// daemon-lifetime runCtx still bounds it (the select below).
+	// daemon-lifetime runCtx still bounds it (the guard below, and the sweep's
+	// own window).
 	bgCtx := context.WithoutCancel(ctx)
+	// The daemon-lifetime context is read here and handed to the goroutine
+	// rather than read inside it: runCtx is written once, by Run, before the
+	// backend that calls this exists, so a synchronous read is safe while a
+	// concurrent one is a race waiting for someone to reassign it.
+	runCtx := c.runCtx
 	go func() {
 		defer c.reconciling.Delete(sn)
-		// Every reconcile subscribes the same shared config filter; concurrent
-		// ones would steal each other's handler and truncate collection (or tear
-		// down the broker subscription mid-window). Serialize them.
-		c.reconcileMu.Lock()
-		defer c.reconcileMu.Unlock()
-		if c.runCtx.Err() != nil {
+		if runCtx.Err() != nil {
 			return
 		}
-		filter := c.deps.HASS.ConfigFilter()
-		var mu sync.Mutex
-		retained := map[string][]byte{}
-		handler := func(msg *mqtt.Message) {
-			mu.Lock()
-			retained[msg.Topic] = append([]byte(nil), msg.Payload...)
-			mu.Unlock()
-		}
-		if _, err := c.deps.MQTT.Subscribe(bgCtx, filter, mqtt.QoS0, handler); err != nil {
-			c.logger.Warn("coordinator.reconcile_subscribe_failed",
-				slog.String("sn", sn), slog.String("err", err.Error()))
-			return
-		}
-		// Retained configs arrive right after subscribe; collect briefly, but
-		// abandon early if the daemon is shutting down.
-		select {
-		case <-c.runCtx.Done():
-			_ = c.deps.MQTT.Unsubscribe(bgCtx, filter)
-			return
-		case <-time.After(reconcileCollectWindow):
-		}
-		_ = c.deps.MQTT.Unsubscribe(bgCtx, filter)
-
-		mu.Lock()
-		orphans := c.deps.HASS.OrphanConfigs(retained, published, sn)
-		mu.Unlock()
-
-		cleared := c.clearOrphanConfigs(bgCtx, orphans)
-		if cleared > 0 {
-			// Invalidate the cleared configs in discovery so a still-live entity
-			// wrongly cleared by a transiently shrunken report is republished on
-			// the next report instead of staying deleted until restart.
-			c.deps.HASS.Forget(orphans)
-			c.logger.Info("coordinator.discovery_orphans_cleared",
-				slog.String("sn", sn), slog.Int("count", cleared))
-		}
+		c.sweepOrphans(bgCtx, sn, published)
 	}()
 }
 
-// clearOrphanConfigs removes each retained orphan config by publishing an empty
-// retained payload to its topic, returning how many were cleared.
-func (c *Coordinator) clearOrphanConfigs(ctx context.Context, orphans []string) int {
-	cleared := 0
-	for _, topic := range orphans {
-		if err := c.deps.MQTT.Publish(ctx, topic, nil, mqtt.QoS0, true); err != nil {
-			c.logger.Warn("coordinator.reconcile_clear_failed",
-				slog.String("topic", topic), slog.String("err", err.Error()))
-			continue
-		}
-		cleared++
+// sweepOrphans runs one report-only snapshot of the discovery tree for a
+// single device and retracts whatever it owns and no longer publishes.
+//
+// Report-only, and then retracted by this caller, deliberately. The library's
+// retracting pass judges a topic on [publisher.SweepRequest.Owns] alone, which
+// sees the parsed topic and nothing else — and this daemon's ownership rule
+// has always been the stronger one: the retained *payload* must carry a
+// unique_id in this bridge's namespace and a state topic under its MQTT root.
+// A pass that retracted on the topic namespace alone would be a widening of
+// what this daemon is willing to delete from a shared discovery tree, inside
+// a step whose whole claim is that nothing changed.
+//
+// What the library does own here is everything that was hard: one snapshot
+// window at a time per runtime (two windows on one filter leave the second
+// handler installed over the first and the first teardown unsubscribes for
+// both, after which both report nothing), the parsing of all three config
+// topic forms, and the claim check that keeps a config still inside its own
+// publish call from being judged an orphan.
+//
+// [publisher.Runtime.Retract] also gives the Forget behaviour for free on the
+// runtime's side: a retracted topic leaves the declared set, so a wrongly
+// swept entity — a transiently shrunken report — is published again on the
+// next report rather than staying deleted for the process lifetime. The
+// matching half of internal/hass's own sent-set is still cleared by hand.
+func (c *Coordinator) sweepOrphans(ctx context.Context, sn string, published map[string]bool) {
+	prefix := c.deps.HARuntime.Prefix()
+	var (
+		mu    sync.Mutex
+		owned []string
+	)
+	_, err := c.deps.HARuntime.Sweep(ctx, publisher.SweepRequest{
+		ReportOnly: true,
+		Window:     reconcileCollectWindow,
+		Owns: func(t publisher.ConfigTopic) bool {
+			return hass.OwnsDeviceConfigTopic(c.root, sn, t)
+		},
+		Inspect: func(t publisher.ConfigTopic, body []byte) {
+			// Called on the transport's read loop: cheap, and it publishes
+			// nothing. The retraction happens after Sweep returns.
+			if !c.deps.HASS.IsOwnConfig(body) {
+				return // another writer's config in the same namespace
+			}
+			// Rebuilt through the library's own renderer for this fleet's
+			// topic form rather than by string concatenation, because it is
+			// the same function the eventual bundle migration has to retract
+			// with: 29 of 29 of this bridge's retained configs, measured.
+			topic := publisher.LegacyTopicByUniqueID(publisher.LegacyEntity{
+				Prefix:   prefix,
+				Platform: t.Platform,
+				UniqueID: t.ObjectID,
+			})
+			if topic == "" {
+				return
+			}
+			mu.Lock()
+			owned = append(owned, topic)
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		c.logger.Warn("coordinator.reconcile_sweep_failed",
+			slog.String("sn", sn), slog.String("err", err.Error()))
+		return
 	}
-	return cleared
+
+	// Two claim sets, and both are needed. published is what this device's
+	// current report minted, which is the question an orphan actually
+	// answers. declared is what the runtime has written for the whole
+	// process — a second device's configs, and this device's own while a
+	// report is transiently shrunken — and subtracting it is the safety net
+	// the library's own retracting pass applies and a report-only pass does
+	// not: Owned lists every topic the window judged, claimed or not.
+	claimed := make(map[string]bool, len(published))
+	for topic := range published {
+		claimed[topic] = true
+	}
+	for _, topic := range c.deps.HARuntime.Declared() {
+		claimed[topic] = true
+	}
+	mu.Lock()
+	orphans := make([]string, 0, len(owned))
+	for _, topic := range owned {
+		if !claimed[topic] {
+			orphans = append(orphans, topic)
+		}
+	}
+	mu.Unlock()
+	if len(orphans) == 0 {
+		return
+	}
+
+	if err := c.deps.HARuntime.Retract(ctx, orphans...); err != nil {
+		c.logger.Warn("coordinator.reconcile_clear_failed",
+			slog.String("sn", sn), slog.String("err", err.Error()))
+	}
+	// Invalidate the cleared configs in discovery so a still-live entity
+	// wrongly cleared by a transiently shrunken report is republished on the
+	// next report instead of staying deleted until restart. Unconditional,
+	// including after a partial failure: republishing a config the broker
+	// still holds costs one deduped write, while leaving it forgotten by
+	// neither side costs the entity.
+	c.deps.HASS.Forget(orphans)
+	c.logger.Info("coordinator.discovery_orphans_cleared",
+		slog.String("sn", sn), slog.Int("count", len(orphans)))
 }
 
 // discoverySignature is a stable fingerprint of a device's published config

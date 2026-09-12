@@ -34,13 +34,15 @@ func newStatePlaneRig(t *testing.T) *statePlaneRig {
 	pub := &capturingClient{}
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
 	dev := goldenUnit()
+	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
 		Cfg:        cfg,
 		Backend:    &goldenBackend{devices: []source.Device{dev}},
 		MQTT:       pub,
 		Catalog:    goldenCatalog(t),
-		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, pub, discardLogger()),
+		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, rt, discardLogger()),
 		Logger:     discardLogger(),
+		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
 	})
 	// An already-cancelled runCtx keeps the orphan reconcile at its first

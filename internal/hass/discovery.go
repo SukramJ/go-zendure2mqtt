@@ -18,12 +18,26 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/SukramJ/go-mqtt"
-
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
+
+// ConfigWriter is the narrow slice of [publisher.Runtime] this package
+// publishes retained discovery configs through.
+//
+// An interface of one method rather than the concrete runtime because what
+// this package needs from it is one call, and because the boolean is part of
+// the contract: the runtime claims the topic before it writes and records it
+// afterwards, and that claim is what keeps the orphan sweep from retracting a
+// config this process is publishing right now. Writing configs straight to an
+// MQTT client — which is what this package did before ADR 0070 phase 5,
+// step 4 — leaves the sweep with nothing to compare against.
+type ConfigWriter interface {
+	// Publish writes one retained discovery config and reports whether it
+	// reached the broker.
+	Publish(ctx context.Context, topic string, payload []byte) (bool, error)
+}
 
 // Discovery publishes Home Assistant discovery configs (idempotently: each
 // unique_id is sent once per process lifetime).
@@ -31,7 +45,7 @@ type Discovery struct {
 	base   string // HA discovery root, e.g. "homeassistant"
 	root   string // bridge MQTT topic root, e.g. "zendure"
 	lang   string
-	pub    mqtt.Publisher
+	pub    ConfigWriter
 	logger *slog.Logger
 
 	mu   sync.Mutex
@@ -39,7 +53,7 @@ type Discovery struct {
 }
 
 // New constructs a Discovery publisher.
-func New(base, root, lang string, pub mqtt.Publisher, logger *slog.Logger) *Discovery {
+func New(base, root, lang string, pub ConfigWriter, logger *slog.Logger) *Discovery {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -75,7 +89,7 @@ func (d *Discovery) Publish(ctx context.Context, dev source.Device, report *mode
 			d.logger.Warn("hass.config_failed", slog.String("id", uniqueID), slog.String("err", err.Error()))
 			continue
 		}
-		if err := d.pub.Publish(ctx, topic, payload, mqtt.QoS0, true); err != nil {
+		if _, err := d.pub.Publish(ctx, topic, payload); err != nil {
 			d.logger.Warn("hass.publish_failed", slog.String("topic", topic), slog.String("err", err.Error()))
 			continue
 		}

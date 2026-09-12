@@ -195,6 +195,18 @@ func newStatePlane(pub *capturingClient, root string) *publisher.StatePublisher 
 	})
 }
 
+// newHARuntime builds the Home Assistant runtime the daemon builds, over the
+// capturing client: the discovery prefix, this bridge's own status topic and
+// QoS 0 stated with publisher.QoSAtMostOnce.
+func newHARuntime(pub *capturingClient, root string) *publisher.Runtime {
+	return publisher.New(hagomqtt.Transport(pub), publisher.Config{
+		Prefix:      "homeassistant",
+		StatusTopic: BridgeStatusTopic(root),
+		QoS:         publisher.QoSAtMostOnce,
+		Logger:      discardLogger(),
+	})
+}
+
 // capturePublishWire is [capturePublish] plus the ordered wire log, for the
 // pins that assert on the QoS and the retain flag rather than on the bytes.
 func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (map[string][]byte, []wireRecord) {
@@ -202,13 +214,15 @@ func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (
 
 	pub := &capturingClient{}
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
 		Cfg:        cfg,
 		Backend:    &goldenBackend{devices: []source.Device{dev}},
 		MQTT:       pub,
 		Catalog:    goldenCatalog(t),
-		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, pub, discardLogger()),
+		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, rt, discardLogger()),
 		Logger:     discardLogger(),
+		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
 	})
 	dead, cancel := context.WithCancel(context.Background())

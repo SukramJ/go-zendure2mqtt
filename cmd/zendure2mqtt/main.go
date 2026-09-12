@@ -8,12 +8,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -83,21 +85,46 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// --- Backend (local HTTP polling or cloud) ---
 	backend := buildBackend(cfg, logger)
 
+	// --- Home Assistant runtime (LWT, birth, retained configs, sweep) ---
+	//
+	// Built before the MQTT client, because the Last Will is part of CONNECT
+	// and the will is this runtime's statement: Will() returns the same topic
+	// and the same payload AnnounceOnline and AnnounceOffline write, so the
+	// bridge structurally cannot configure a will no published entity
+	// references — the measured defect of two sibling bridges, where a hard
+	// crash writes "offline" where nothing reads it and every entity stays
+	// available forever. The client it publishes through does not exist yet,
+	// so the transport is wired in below, before anything connects.
+	//
+	// QoS 0 again, stated: see the state plane below.
+	haLink := &deferredTransport{}
+	haRuntime := publisher.New(haLink, publisher.Config{
+		Prefix:      cfg.HASSBaseTopic,
+		StatusTopic: coordinator.BridgeStatusTopic(cfg.MQTTTopic),
+		QoS:         publisher.QoSAtMostOnce,
+		Logger:      logger,
+	})
+	will, err := haRuntime.Will()
+	if err != nil {
+		return fmt.Errorf("mqtt: %w", err)
+	}
+
 	// --- MQTT (output broker) ---
-	statusTopic := cfg.MQTTTopic + "/bridge/status"
 	mqttClient := mqtt.NewTCPClient(mqtt.TCPConfig{
-		BrokerURL:  fmt.Sprintf("tcp://%s:%d", cfg.MQTTServer, cfg.MQTTPort),
-		ClientID:   config.MQTTClientID,
-		Username:   cfg.MQTTLogin,
-		Password:   cfg.MQTTPassword,
-		Will:       &mqtt.Will{Topic: statusTopic, Payload: []byte("offline"), Retain: true},
+		BrokerURL: fmt.Sprintf("tcp://%s:%d", cfg.MQTTServer, cfg.MQTTPort),
+		ClientID:  config.MQTTClientID,
+		Username:  cfg.MQTTLogin,
+		Password:  cfg.MQTTPassword,
+		Will: &mqtt.Will{
+			Topic:   will.Topic,
+			Payload: will.Payload,
+			QoS:     mqtt.QoS(will.QoS),
+			Retain:  will.Retain,
+		},
 		CleanStart: true,
 		Logger:     logger,
 	})
 	lifecycle := mqtt.NewLifecycle(mqtt.LifecycleConfig{Logger: logger}, mqttClient)
-	if err := lifecycle.Start(ctx); err != nil {
-		return fmt.Errorf("mqtt: %w", err)
-	}
 	// Circuit breaker between the bridge and the output broker: during a
 	// degraded-broker phase (TCP link up, acks missing) publishes fail
 	// fast with mqtt.ErrCircuitOpen instead of each stalling on the ack
@@ -112,6 +139,14 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 				slog.String("to", to.String()))
 		},
 	})
+	// The runtime publishes through the breaker and subscribes around it, for
+	// the same reason the coordinator's client is split: breaking the
+	// subscribe path would only delay resubscription after a reconnect.
+	haLink.wire(hagomqtt.Split(breaker, mqttClient))
+
+	if err := lifecycle.Start(ctx); err != nil {
+		return fmt.Errorf("mqtt: %w", err)
+	}
 	defer func() {
 		stopCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
 		defer stop()
@@ -148,7 +183,10 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// --- HA discovery (optional) ---
 	var hassDiscovery *hass.Discovery
 	if cfg.HASSEnable {
-		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, breaker, logger)
+		// Through the runtime rather than straight to the client: the runtime
+		// claims each config topic, and that claim is what the orphan sweep
+		// compares against and what the birth resync replays.
+		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, haRuntime, logger)
 	}
 
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
@@ -166,6 +204,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		HASS:       hassDiscovery,
 		State:      store,
 		Logger:     logger,
+		HARuntime:  haRuntime,
 		StatePlane: statePlane,
 	})
 	lifecycle.OnConnect(func(cctx context.Context) { coord.PublishOnline(cctx) })
@@ -188,6 +227,11 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	}
 
 	err = g.Wait()
+
+	// Drain a birth-triggered config replay before announcing offline, so a
+	// resync in flight cannot write "online"-era configs after the shutdown
+	// marker.
+	haRuntime.Close()
 
 	// Graceful shutdown: explicitly mark the bridge offline (the LWT only
 	// fires on an ungraceful disconnect) before the deferred MQTT stop.
@@ -237,4 +281,74 @@ func loadConfig(configPath string, logger *slog.Logger) (*config.Config, error) 
 	}
 	logger.Info("zendure2mqtt.config_loaded", slog.String("path", path))
 	return cfg, nil
+}
+
+// errTransportNotWired is returned by a [deferredTransport] used before its
+// client was supplied. A programming error, reported rather than panicked
+// because the caller is a publish path and the daemon losing one config
+// message is better than the daemon dying.
+var errTransportNotWired = errors.New("mqtt: transport used before the client was wired")
+
+// deferredTransport is a [publisher.Transport] whose client is supplied after
+// construction.
+//
+// It exists for one ordering constraint, and it is a real one: the Last Will
+// is part of CONNECT, so the MQTT client must be built with it — while the
+// will itself is [publisher.Runtime.Will]'s answer, which is what makes the
+// will's topic and the availability topic every entity references provably
+// one string. One of the two has to be built first, and making it the runtime
+// is what keeps the will a single statement instead of a literal here that
+// has to agree with a literal in the library.
+//
+// wire is called before the lifecycle connects, so nothing can reach a method
+// here beforehand. The field is guarded anyway: once connected it is read
+// from the transport's read loop (the birth subscription) and from the poll
+// path at the same time.
+type deferredTransport struct {
+	mu sync.RWMutex
+	tr publisher.Transport
+}
+
+// wire supplies the transport. Calling it twice is a programming error and
+// the last call wins; nothing in this daemon does.
+func (d *deferredTransport) wire(tr publisher.Transport) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.tr = tr
+}
+
+func (d *deferredTransport) target() (publisher.Transport, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if d.tr == nil {
+		return nil, errTransportNotWired
+	}
+	return d.tr, nil
+}
+
+// Publish implements [publisher.Transport].
+func (d *deferredTransport) Publish(ctx context.Context, topic string, payload []byte, qos byte, retain bool) error {
+	tr, err := d.target()
+	if err != nil {
+		return err
+	}
+	return tr.Publish(ctx, topic, payload, qos, retain)
+}
+
+// Subscribe implements [publisher.Transport].
+func (d *deferredTransport) Subscribe(ctx context.Context, filter string, qos byte, h publisher.Handler) error {
+	tr, err := d.target()
+	if err != nil {
+		return err
+	}
+	return tr.Subscribe(ctx, filter, qos, h)
+}
+
+// Unsubscribe implements [publisher.Transport].
+func (d *deferredTransport) Unsubscribe(ctx context.Context, filter string) error {
+	tr, err := d.target()
+	if err != nil {
+		return err
+	}
+	return tr.Unsubscribe(ctx, filter)
 }
