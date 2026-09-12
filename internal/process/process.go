@@ -112,8 +112,8 @@ func sanitizeSegment(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
-		switch {
-		case r == '/' || r == '+' || r == '#' || r == 0 || r == utf8.RuneError:
+		switch r {
+		case '/', '+', '#', 0, utf8.RuneError:
 			b.WriteByte('_')
 		default:
 			b.WriteRune(r)
