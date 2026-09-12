@@ -21,7 +21,7 @@ func (p *failingPublisher) Publish(context.Context, string, []byte, mqtt.QoS, bo
 }
 
 // recordingSubscriber captures Subscribe/Unsubscribe filters so the
-// test can prove the session delegates them to the raw client.
+// test can prove the split client delegates them to the raw client.
 type recordingSubscriber struct {
 	subscribed   []string
 	unsubscribed []string
@@ -41,16 +41,18 @@ func (s *recordingSubscriber) Unsubscribe(_ context.Context, filter string) erro
 // session routes Publish through the breaker: once the failure
 // threshold is reached, publishes fail fast with ErrCircuitOpen and no
 // longer hit the underlying client.
+//
+// The session itself is now [mqtt.SplitClient] rather than a local
+// struct, so what this pins is the wiring in main.go — that the
+// breaker is on the publish half — not a type this repo owns.
 func TestMQTTSessionPublishIsCircuitGated(t *testing.T) {
 	t.Parallel()
 
 	pub := &failingPublisher{}
-	session := &mqttSession{
-		Breaker: mqtt.NewBreaker(pub, mqtt.BreakerConfig{
-			FailureThreshold: 1,
-		}),
-		Subscriber: &recordingSubscriber{},
-	}
+	session := mqtt.SplitClient(
+		mqtt.NewBreaker(pub, mqtt.BreakerConfig{FailureThreshold: 1}),
+		&recordingSubscriber{},
+	)
 
 	err := session.Publish(t.Context(), "t", nil, mqtt.QoS0, false)
 	if !errors.Is(err, mqtt.ErrNotConnected) {
@@ -71,10 +73,10 @@ func TestMQTTSessionSubscribeBypassesBreaker(t *testing.T) {
 	t.Parallel()
 
 	sub := &recordingSubscriber{}
-	session := &mqttSession{
-		Breaker:    mqtt.NewBreaker(&failingPublisher{}, mqtt.BreakerConfig{FailureThreshold: 1}),
-		Subscriber: sub,
-	}
+	session := mqtt.SplitClient(
+		mqtt.NewBreaker(&failingPublisher{}, mqtt.BreakerConfig{FailureThreshold: 1}),
+		sub,
+	)
 
 	// Trip the circuit open on the publish side.
 	_ = session.Publish(t.Context(), "t", nil, mqtt.QoS0, false)

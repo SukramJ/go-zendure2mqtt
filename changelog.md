@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **go-mqtt v1.3.0 → v1.4.0, and the hand-rolled split client is gone.**
+  v1.4.0 is purely additive — it adds `SplitClient(Publisher, Subscriber)`
+  and `ConnectWithRetry`, and changes no behaviour — and `SplitClient` is
+  exactly the nine-line `mqttSession` struct this repo carried to put the
+  circuit breaker on the publish half while subscriptions went to the raw
+  client. `cmd/zendure2mqtt/main.go` now uses the shared helper. No wire
+  behaviour changes; the tests that pinned the split still pin it, now
+  against the library type.
+
 - **Dropped the dead `object_id` key from HA discovery payloads.** Home
   Assistant's MQTT discovery schemas are `extra=REMOVE_EXTRA`; measured against
   the schemas of HA 2026.9, `object_id` is accepted by 0 of 32 MQTT platforms

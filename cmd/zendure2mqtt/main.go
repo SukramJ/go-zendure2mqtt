@@ -131,7 +131,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	coord := coordinator.New(coordinator.Deps{
 		Cfg:     cfg,
 		Backend: backend,
-		MQTT:    &mqttSession{Breaker: breaker, Subscriber: mqttClient},
+		MQTT:    mqtt.SplitClient(breaker, mqttClient),
 		Catalog: cat,
 		HASS:    discovery,
 		State:   store,
@@ -165,20 +165,6 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	offCancel()
 	return err
 }
-
-// mqttSession is the MQTT surface handed to the coordinator: Publish
-// is gated by the circuit breaker, while Subscribe/Unsubscribe go
-// straight to the client — subscriptions are startup-path calls with
-// their own SUBACK-bounded wait and must not be rejected during a
-// publish-side broker brownout.
-type mqttSession struct {
-	*mqtt.Breaker
-	mqtt.Subscriber
-}
-
-// Compile-time contract: the session satisfies the coordinator's
-// combined MQTT dependency.
-var _ mqtt.Client = (*mqttSession)(nil)
 
 // buildBackend constructs the transport backend selected by CONNECTION.
 func buildBackend(cfg *config.Config, logger *slog.Logger) source.Backend {
