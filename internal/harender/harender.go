@@ -289,9 +289,11 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 	case hacatalog.PlatformSelect:
 		desc.Options = options(e, r.Lang)
 	default:
-		// The catalog loader accepts exactly five platforms and this switch
-		// answers four of them. The fifth is binary_sensor, which the loader
-		// admits and the documentation offers while Discovery.config has no
+		// The catalog loader accepts exactly five platforms. Three are
+		// answered above and switch is answered in [Entity.BuildDiscovery],
+		// where its payload_on/payload_off belong. The fifth is
+		// binary_sensor, which the loader admits and the documentation
+		// offers while Discovery.config has no
 		// case for it — F7 of the phase-5 measurement: the entity would be
 		// published with a raw numeric state and no payload_on/payload_off
 		// to interpret it. 0 of 27 catalog entries use it, so this is a trap
