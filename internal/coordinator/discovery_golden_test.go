@@ -15,6 +15,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/SukramJ/go-hamqtt/discovery"
+	"github.com/SukramJ/go-hamqtt/publisher"
+	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
@@ -70,6 +73,22 @@ func canonicalJSON(t *testing.T, body map[string]any) string {
 	return string(raw)
 }
 
+// wireRecord is one publish as the wire saw it: not just the bytes, but the
+// two flags no pin in this repository covered before the state plane moved
+// onto the shared library.
+//
+// The QoS is recorded because it is the one thing the migration could change
+// without changing a payload. publisher.StateConfig's zero value means
+// "unset" and resolves to QoS 1, and this bridge has always published at
+// QoS 0, so "nothing moved" has to include the level — and a byte pin cannot
+// see it.
+type wireRecord struct {
+	Topic   string
+	Payload []byte
+	QoS     mqtt.QoS
+	Retain  bool
+}
+
 // capturingClient records every publish so a pin can read what the bridge put
 // on the wire. Subscribe/Unsubscribe are inert: the orphan reconcile is not
 // what these tests pin, and it is short-circuited before it subscribes (see
@@ -77,16 +96,30 @@ func canonicalJSON(t *testing.T, body map[string]any) string {
 type capturingClient struct {
 	mu       sync.Mutex
 	payloads map[string][]byte
+	records  []wireRecord
 }
 
-func (c *capturingClient) Publish(_ context.Context, topic string, payload []byte, _ mqtt.QoS, _ bool, _ ...mqtt.PublishOption) error {
+func (c *capturingClient) Publish(_ context.Context, topic string, payload []byte, qos mqtt.QoS, retain bool, _ ...mqtt.PublishOption) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.payloads == nil {
 		c.payloads = map[string][]byte{}
 	}
 	c.payloads[topic] = append([]byte(nil), payload...)
+	c.records = append(c.records, wireRecord{
+		Topic:   topic,
+		Payload: append([]byte(nil), payload...),
+		QoS:     qos,
+		Retain:  retain,
+	})
 	return nil
+}
+
+// wire returns every publish the client saw, in order.
+func (c *capturingClient) wire() []wireRecord {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]wireRecord(nil), c.records...)
 }
 
 func (c *capturingClient) Subscribe(context.Context, string, mqtt.QoS, mqtt.MessageHandler, ...mqtt.SubscribeOption) (mqtt.SubscribeResult, error) {
@@ -140,16 +173,43 @@ func goldenCatalog(t *testing.T) *catalog.Catalog {
 // would need a broker, not a capture.
 func capturePublish(t *testing.T, dev source.Device, report *model.Report) map[string][]byte {
 	t.Helper()
+	captured, _ := capturePublishWire(t, dev, report)
+	return captured
+}
+
+// newStatePlane builds the state publisher the daemon builds, over the
+// capturing client: QoS 0 stated with publisher.QoSAtMostOnce, the raw
+// encoding, and this bridge's own command filter as the collision guard.
+//
+// It restates the composition root's configuration rather than importing it,
+// because cmd/zendure2mqtt is a main package and nothing can. What keeps the
+// two in step is TestEveryPublishIsAtMostOnce reading the level off the wire
+// rather than off the config: a daemon configured differently from this rig
+// would publish at a different QoS, which that pin fails on.
+func newStatePlane(pub *capturingClient, root string) *publisher.StatePublisher {
+	return publisher.NewStatePublisher(hagomqtt.Transport(pub), publisher.StateConfig{
+		QoS:            publisher.QoSAtMostOnce,
+		Encoding:       discovery.RawEncoding,
+		CommandFilters: []string{CommandFilter(root)},
+		Logger:         discardLogger(),
+	})
+}
+
+// capturePublishWire is [capturePublish] plus the ordered wire log, for the
+// pins that assert on the QoS and the retain flag rather than on the bytes.
+func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (map[string][]byte, []wireRecord) {
+	t.Helper()
 
 	pub := &capturingClient{}
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
 	c := New(Deps{
-		Cfg:     cfg,
-		Backend: &goldenBackend{devices: []source.Device{dev}},
-		MQTT:    pub,
-		Catalog: goldenCatalog(t),
-		HASS:    hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, pub, discardLogger()),
-		Logger:  discardLogger(),
+		Cfg:        cfg,
+		Backend:    &goldenBackend{devices: []source.Device{dev}},
+		MQTT:       pub,
+		Catalog:    goldenCatalog(t),
+		HASS:       hass.New("homeassistant", cfg.MQTTTopic, cfg.Language, pub, discardLogger()),
+		Logger:     discardLogger(),
+		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
 	})
 	dead, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -158,12 +218,12 @@ func capturePublish(t *testing.T, dev source.Device, report *model.Report) map[s
 	c.publish(context.Background(), dev, report)
 
 	pub.mu.Lock()
-	defer pub.mu.Unlock()
 	out := make(map[string][]byte, len(pub.payloads))
 	for k, v := range pub.payloads {
 		out[k] = v
 	}
-	return out
+	pub.mu.Unlock()
+	return out, pub.wire()
 }
 
 // discoveryEntries decodes the captured discovery configs, keyed by the

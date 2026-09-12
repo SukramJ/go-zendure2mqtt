@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SukramJ/go-hamqtt/publisher"
 	"github.com/SukramJ/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
@@ -39,6 +40,17 @@ type Deps struct {
 	HASS    *hass.Discovery // nil when HA discovery is disabled
 	State   *state.Store    // nil when the diagnostic web UI is disabled
 	Logger  *slog.Logger
+
+	// StatePlane writes every point's retained state value. Required.
+	//
+	// It is built at the composition root (cmd/zendure2mqtt) rather than
+	// here, because the one thing it has to be told is the quality of
+	// service and that is a statement about an installed base rather than
+	// about this package. The wiring states [publisher.QoSAtMostOnce] —
+	// QoS 0 — because that is what every release of this bridge has
+	// published at; the library's own default is QoS 1 and the zero value
+	// of its config would take it silently.
+	StatePlane *publisher.StatePublisher
 }
 
 // Coordinator wires a backend to the MQTT broker.
@@ -79,12 +91,30 @@ func New(deps Deps) *Coordinator {
 	}
 }
 
+// CommandFilter is the MQTT filter this bridge subscribes for inbound
+// commands, `<root>/+/+/+/set`.
+//
+// Exported because the composition root needs the same string for
+// [publisher.StateConfig.CommandFilters], which refuses a state publish that
+// would land inside this process's own command subscription and be echoed
+// straight back into [Coordinator.handleSet]. One formula, two readers: the
+// library's own guard exists because consumers wrote the filter twice and the
+// copies drifted.
+//
+// Note what it does not cover, unchanged: a five-level pack command topic
+// (`<root>/<sn>/battery/<packSN>/<leaf>/set`) matches neither this filter nor
+// handleSet's five-part check, so a writable pack property would publish an
+// unroutable command_topic — F3 of the ADR 0070 phase-5 measurement, latent
+// because 0 of the 7 pack properties is writable, and deliberately left
+// as-is here.
+func CommandFilter(root string) string { return root + "/+/+/+/set" }
+
 // Run subscribes to command topics and drives the backend until ctx ends.
 func (c *Coordinator) Run(ctx context.Context) error {
 	c.runCtx = ctx
 	c.PublishOnline(ctx)
 
-	setFilter := c.root + "/+/+/+/set"
+	setFilter := CommandFilter(c.root)
 	if _, err := c.deps.MQTT.Subscribe(ctx, setFilter, mqtt.QoS0, c.handleSet); err != nil {
 		// A failed initial subscribe is not replayed on later reconnects (the
 		// client rolls back the registration), so without a retry every /set
@@ -124,6 +154,15 @@ func (c *Coordinator) retrySubscribe(ctx context.Context, filter string) {
 
 // PublishOnline (re)announces bridge availability. Wired to OnConnect.
 func (c *Coordinator) PublishOnline(ctx context.Context) {
+	// A (re)connect may be to a broker that came back without its retained
+	// store, in which case the dedup gate would suppress every value it
+	// believes is already there and leave every entity blank until its next
+	// change — which on chargeMaxLimit or packNum is never. Reset opens the
+	// gate without forgetting the index, so the next poll writes the fleet
+	// once and is deduped again afterwards. The poll is the snapshot pass
+	// the library's Reset documentation asks a consumer to pair it with.
+	c.deps.StatePlane.Reset()
+
 	topic := c.root + "/bridge/status"
 	if err := c.deps.MQTT.Publish(ctx, topic, []byte("online"), mqtt.QoS0, true); err != nil {
 		c.logger.Warn("coordinator.online_failed", slog.String("err", err.Error()))
@@ -166,13 +205,54 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		// not linger as unavailable entities in Home Assistant.
 		c.reconcileOrphans(ctx, dev.SN, published)
 	}
+	written := 0
 	for _, p := range points {
-		topic := process.StateTopic(c.root, dev.SN, p)
-		if err := c.deps.MQTT.Publish(ctx, topic, formatValue(p.Value), mqtt.QoS0, true); err != nil {
-			c.logger.Warn("coordinator.publish_failed", slog.String("topic", topic), slog.String("err", err.Error()))
+		if c.publishState(ctx, process.StateTopic(c.root, dev.SN, p), formatValue(p.Value)) {
+			written++
 		}
 	}
-	c.logger.Debug("coordinator.published", slog.String("sn", dev.SN), slog.Int("points", len(points)))
+	// written is reported beside points because the gap between them is the
+	// measurable effect of the dedup gate: this bridge polls every 15s and
+	// re-reported nearly every value unchanged, so a steady-state device
+	// should show written=0 and an operator should be able to see that.
+	c.logger.Debug("coordinator.published",
+		slog.String("sn", dev.SN), slog.Int("points", len(points)), slog.Int("written", written))
+}
+
+// publishState writes one point's value through the state plane and reports
+// whether it actually reached the broker.
+//
+// The dedup gate inside [publisher.StatePublisher.Publish] is the whole point
+// of routing through it: a value byte-identical to the one the broker already
+// retains is not written again. Nothing about the topic, the payload, the
+// retain flag or the QoS changes — the payload is still [formatValue]'s
+// bytes, deliberately, because the library's own [publisher.RenderRawValue]
+// renders a Go bool as "true"/"false" where this bridge has always published
+// "1"/"0", and a state plane migration is not the place to change a payload.
+//
+// An empty payload is routed to Evict rather than to Publish. [formatValue]
+// renders an empty string value as zero bytes, and an empty retained payload
+// is MQTT's retraction rather than a state — which is what this bridge has
+// always done with it, by accident. Evict is the same three wire values
+// (empty payload, retained, QoS 0) said on purpose, and it drops the topic
+// from the dedup index so the next real value is not compared against a
+// retraction.
+func (c *Coordinator) publishState(ctx context.Context, topic string, payload []byte) bool {
+	if len(payload) == 0 {
+		if err := c.deps.StatePlane.Evict(ctx, topic); err != nil {
+			c.logger.Warn("coordinator.state_evict_failed",
+				slog.String("topic", topic), slog.String("err", err.Error()))
+			return false
+		}
+		return true
+	}
+	written, err := c.deps.StatePlane.Publish(ctx, topic, payload)
+	if err != nil {
+		c.logger.Warn("coordinator.publish_failed",
+			slog.String("topic", topic), slog.String("err", err.Error()))
+		return false
+	}
+	return written
 }
 
 // reconcileCollectWindow is how long the orphan reconcile collects retained

@@ -19,6 +19,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/SukramJ/go-hamqtt/discovery"
+	"github.com/SukramJ/go-hamqtt/publisher"
+	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
@@ -115,10 +118,37 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		_ = lifecycle.Stop(stopCtx)
 	}()
 
+	// --- State plane ---
+	//
+	// QoS 0, stated rather than defaulted. Every release of this bridge has
+	// published its whole state plane at QoS 0, and publisher.StateConfig's
+	// zero value means "unset" and resolves to QoS 1 — so adopting the
+	// runtime without QoSAtMostOnce would have changed the delivery
+	// guarantee of an installed base inside a migration step whose purpose
+	// is de-duplication. That is an inherited choice being preserved, not
+	// an endorsement: an availability marker or a state value lost at QoS 0
+	// is lost, and the broker then keeps serving the previous retained
+	// value until the datapoint next changes — which for a crash is never.
+	// Changing it is its own release with its own changelog line.
+	//
+	// CommandFilters is the one thing the library can check that this
+	// bridge could not: a state topic that fell inside this process's own
+	// /set subscription would be echoed back into the command handler, and
+	// the filter is now stated once (coordinator.CommandFilter) and read by
+	// both the subscriber and the guard.
+	statePlane := publisher.NewStatePublisher(hagomqtt.Split(breaker, mqttClient), publisher.StateConfig{
+		QoS:      publisher.QoSAtMostOnce,
+		Encoding: discovery.RawEncoding,
+		CommandFilters: []string{
+			coordinator.CommandFilter(cfg.MQTTTopic),
+		},
+		Logger: logger,
+	})
+
 	// --- HA discovery (optional) ---
-	var discovery *hass.Discovery
+	var hassDiscovery *hass.Discovery
 	if cfg.HASSEnable {
-		discovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, breaker, logger)
+		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.Language, breaker, logger)
 	}
 
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
@@ -129,13 +159,14 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 
 	// --- Coordinator ---
 	coord := coordinator.New(coordinator.Deps{
-		Cfg:     cfg,
-		Backend: backend,
-		MQTT:    mqtt.SplitClient(breaker, mqttClient),
-		Catalog: cat,
-		HASS:    discovery,
-		State:   store,
-		Logger:  logger,
+		Cfg:        cfg,
+		Backend:    backend,
+		MQTT:       mqtt.SplitClient(breaker, mqttClient),
+		Catalog:    cat,
+		HASS:       hassDiscovery,
+		State:      store,
+		Logger:     logger,
+		StatePlane: statePlane,
 	})
 	lifecycle.OnConnect(func(cctx context.Context) { coord.PublishOnline(cctx) })
 

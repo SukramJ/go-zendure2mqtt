@@ -2,6 +2,51 @@
 
 ## What's Changed
 
+### Changed
+
+- **State is no longer re-published when it has not changed.** Every point
+  this bridge resolves now goes out through `publisher.StatePublisher` from
+  `go-hamqtt`, whose dedup gate compares the payload bytes against what the
+  broker last accepted and writes nothing when they are equal. Before this
+  release the publish loop wrote all 30 retained state topics on every poll
+  — with the default 15 s interval that is roughly 7 000 messages an hour
+  per device, nearly all of them byte-identical to the value already
+  retained on the broker. A `packNum` or `chargeMaxLimit` sensor now
+  publishes once per process.
+
+  **Nothing about the wire moved except the number of messages.** Same
+  topics, same payloads, same retain flag and the same QoS 0 — the payload
+  is still rendered by this repository's own `formatValue`, not by the
+  library's renderer, because the two disagree on a Go bool (`"1"`/`"0"` here
+  against `"true"`/`"false"` there) and a state-plane migration is not the
+  place to change a payload. The QoS is stated explicitly with
+  `publisher.QoSAtMostOnce`: the library's zero value means *unset* and
+  resolves to QoS 1, so adopting the runtime naively would have changed the
+  delivery guarantee of every installed deployment. That is an inherited
+  choice being preserved and not an endorsement — a message lost at QoS 0 is
+  lost, and the broker then keeps serving the previous retained value until
+  the datapoint next changes.
+
+  **What a downstream consumer may notice:** anything that counted messages
+  rather than reading the retained value — a second MQTT subscriber, a
+  Node-RED flow triggered on message rather than on change — now sees far
+  fewer of them. Home Assistant is unaffected; it reads state, not message
+  rates.
+
+  On every (re)connect the gate is reopened (`StatePublisher.Reset`) so a
+  broker that came back without its retained store is rewritten by the next
+  poll instead of being left blank until each value happens to change.
+
+  The state plane is also now checked against this bridge's own command
+  subscription: a state topic that fell inside `<root>/+/+/+/set` would have
+  been echoed straight back into the command handler, and the filter is
+  stated once (`coordinator.CommandFilter`) and read by both the subscriber
+  and the guard. All 30 published state topics are asserted to clear it.
+
+  This is ADR 0070 phase 5, step 3. The four pinned fixtures were not
+  regenerated and hold byte-for-byte; a new pin reads the QoS and the retain
+  flag off the transport call itself, which no golden file can see.
+
 ### Added
 
 - **The shared Home Assistant discovery library now provably reproduces this
