@@ -82,14 +82,15 @@ const maxLoginBackoff = 5 * time.Minute
 func (b *Backend) loginWithRetry(ctx context.Context) error {
 	backoff := minReconnect
 	for {
-		if err := b.login(ctx); err == nil {
+		err := b.login(ctx)
+		if err == nil {
 			return nil
-		} else if ctx.Err() != nil {
-			return ctx.Err()
-		} else {
-			b.logger.Error("cloud.login_failed",
-				slog.String("err", err.Error()), slog.Duration("retry_in", backoff))
 		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		b.logger.Error("cloud.login_failed",
+			slog.String("err", err.Error()), slog.Duration("retry_in", backoff))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
