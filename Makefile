@@ -144,8 +144,19 @@ licenses: ## fail on copyleft dependency licenses (GPL/AGPL/LGPL forbidden; MPL 
 tidy: ## sync go.mod / go.sum
 	$(GO) mod tidy
 
+# Non-destructive by construction: go.mod/go.sum are stashed first and
+# restored on failure, so this is safe inside `make check` — a gate that
+# rewrote the tree as a side effect of reporting would be its own problem.
+# Drift matters here immediately: the ADR 0070 migration is a series of
+# go-hamqtt version bumps, and a bump is exactly what leaves a stale go.sum
+# line, an orphaned require, or an indirect that has become direct.
+.PHONY: tidy-check
+tidy-check: ## verify go.mod/go.sum are tidy + module checksums verify (CI gate)
+	$(GO) mod verify
+	@tmp=$$(mktemp -d); 	cp go.mod go.sum "$$tmp/"; 	$(GO) mod tidy; 	if diff -q "$$tmp/go.mod" go.mod >/dev/null && diff -q "$$tmp/go.sum" go.sum >/dev/null; then 	  rm -rf "$$tmp"; echo "go.mod/go.sum are tidy"; 	else 	  echo "go.mod/go.sum are not tidy — run 'make tidy' and commit the result:"; 	  diff -u "$$tmp/go.mod" go.mod || true; 	  diff -u "$$tmp/go.sum" go.sum || true; 	  cp "$$tmp/go.mod" "$$tmp/go.sum" .; rm -rf "$$tmp"; 	  exit 1; 	fi
+
 .PHONY: check
-check: vet fmt-check lint test ## the pre-commit / pre-push gate
+check: vet fmt-check lint tidy-check test ## the pre-commit / pre-push gate
 
 .PHONY: run
 run: build-daemon ## run the daemon against ./config.yaml
