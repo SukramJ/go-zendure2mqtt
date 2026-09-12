@@ -51,23 +51,35 @@ RELEASE_PAYLOAD  := zendure.yaml config-template.yaml README.md LICENSE changelo
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# Lint tool versions, pinned to match .github/workflows/ci.yml's lint job.
-# `make check` is only a usable gate if it reports what CI reports, so these
-# two lists must be bumped together — raise both, run `make check`, and fix
-# or justify whatever the new release finds in the same change. goimports,
-# govulncheck and go-licenses stay on @latest: goimports has no gate of its
-# own (gofumpt is the formatting authority), and a new vulnerability or
-# license database SHOULD change the answer without a commit.
+# Tool versions, pinned to match .github/workflows/ci.yml. A local gate is
+# only usable if it reports what CI reports, so these two lists must be
+# bumped together — raise both, run `make check`, and fix or justify
+# whatever the new release finds in the same change.
+#
+# govulncheck and go-licenses are pinned too, now that CI's security job
+# gates them. Pinning the binary does not freeze the answer: govulncheck
+# resolves the vulnerability database at run time and go-licenses classifies
+# whatever a dependency actually ships, so a newly published advisory or a
+# relicensed dependency still turns the gate red without a commit here —
+# which is the point. What the pin removes is the other source of red: a
+# tool release changing its own reachability analysis or license classifier
+# under an unrelated PR.
+#
+# goimports stays on @latest deliberately: it has no gate of its own,
+# gofumpt is the formatting authority.
 GOFUMPT_VERSION       ?= v0.12.0
 GOLANGCI_LINT_VERSION ?= v2.13.2
+GOVULNCHECK_VERSION   ?= v1.8.0
+GOLICENSES_VERSION    ?= v1.6.0
+GITLEAKS_VERSION      ?= v8.30.1
 
 .PHONY: setup
 setup: hooks ## install developer tooling (gofumpt, goimports, golangci-lint, govulncheck, go-licenses) + git hooks
 	$(GO) install mvdan.cc/gofumpt@$(GOFUMPT_VERSION)
 	$(GO) install golang.org/x/tools/cmd/goimports@latest
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
-	$(GO) install github.com/google/go-licenses@latest
+	$(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	$(GO) install github.com/google/go-licenses@$(GOLICENSES_VERSION)
 
 .PHONY: hooks
 hooks: ## point git at the tracked hooks in .githooks/ (blocks direct commits on main)
@@ -101,6 +113,85 @@ test-cover: ## run tests + coverage report
 	CGO_ENABLED=1 $(GO) test -race -count=1 -covermode=atomic -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -20
 
+# Fuzz targets live in ./internal/process: sanitizeSegment and validPackSN
+# parse device-supplied strings into MQTT topic levels and HA unique_ids, and
+# a unique_id is what Home Assistant keys its entity registry on — with no
+# migration path once published. Seed corpora are committed under
+# internal/process/testdata/fuzz/, so the seeds also replay as a plain
+# regression table under `make test`.
+FUZZ_PKG ?= ./internal/process
+FUZZTIME ?= 5m
+
+.PHONY: fuzz-smoke
+fuzz-smoke: ## run every Fuzz target in $(FUZZ_PKG) for 10s each (CI smoke gate)
+	@for fn in $$($(GO) test $(FUZZ_PKG) -list '^Fuzz' | grep '^Fuzz'); do \
+	  echo "== fuzz-smoke: $$fn (10s) =="; \
+	  $(GO) test $(FUZZ_PKG) -run '^$$' -fuzz "^$$fn$$" -fuzztime=10s; \
+	done
+
+.PHONY: fuzz
+fuzz: ## run every Fuzz target in $(FUZZ_PKG) for FUZZTIME (default 5m; local/periodic)
+	@for fn in $$($(GO) test $(FUZZ_PKG) -list '^Fuzz' | grep '^Fuzz'); do \
+	  echo "== fuzz: $$fn (fuzztime=$(FUZZTIME)) =="; \
+	  $(GO) test $(FUZZ_PKG) -run '^$$' -fuzz "^$$fn$$" -fuzztime=$(FUZZTIME); \
+	done
+
+# Per-package coverage gate, deliberately per package rather than on a
+# merged total: a single total lets one well-tested package hide a package
+# nothing executes, which is the failure mode this tree actually has.
+#
+# COVER_MIN is the floor for any package not listed in COVER_MIN_OVERRIDES.
+# 25 is chosen to be green on main today with margin, not aspirational — a
+# gate that arrives red is worse than no gate, because the next person
+# cannot tell their finding from the pre-existing ones. The floor clears
+# every tested package with room to spare; the thinnest is
+# internal/coordinator at 32.3%, and that margin is deliberate — the ADR
+# 0070 work is actively adding rendering paths in and around it.
+#
+# COVER_MIN_OVERRIDES pins every package that is below the floor today at
+# (the floor of) its current number. That makes this a ratchet rather than a
+# threshold: those packages cannot get *worse*, and raising one is a matter
+# of deleting its line. Six of them have no test file at all
+# (cmd/zendure2mqtt-util, internal/source, internal/state, internal/version,
+# internal/zendure/local, internal/zendure/model) — the pin records that as
+# a known state instead of letting a merged total paper over it.
+COVER_MIN ?= 25
+COVER_MIN_OVERRIDES ?= \
+	cmd/zendure2mqtt=0 \
+	cmd/zendure2mqtt-util=0 \
+	internal/source=0 \
+	internal/state=0 \
+	internal/version=0 \
+	internal/zendure/cloud=8 \
+	internal/zendure/local=0 \
+	internal/zendure/model=0
+
+.PHONY: cover-check
+cover-check: ## per-package coverage gate (COVER_MIN percent, default 25); NOT part of `check`
+	@status=0; \
+	for pkg in $$($(GO) list ./...); do \
+	  suffix=$${pkg#$(MODULE)/}; \
+	  min="$(COVER_MIN)"; \
+	  for ov in $(COVER_MIN_OVERRIDES); do \
+	    if [ "$${ov%%=*}" = "$$suffix" ]; then min="$${ov#*=}"; fi; \
+	  done; \
+	  profile=$$(mktemp); log=$$(mktemp); \
+	  if ! CGO_ENABLED=1 $(GO) test -race -count=1 -timeout=120s -covermode=atomic \
+	      -coverprofile="$$profile" "$$pkg" >"$$log" 2>&1; then \
+	    echo "FAIL $$suffix (test failure)"; cat "$$log"; status=1; \
+	    rm -f "$$profile" "$$log"; continue; \
+	  fi; \
+	  total=$$($(GO) tool cover -func="$$profile" | awk '/^total:/ {gsub("%","",$$3); print $$3}'); \
+	  rm -f "$$profile" "$$log"; \
+	  if [ -z "$$total" ]; then total=0; fi; \
+	  if awk -v t="$$total" -v m="$$min" 'BEGIN{exit !(t+0>=m+0)}'; then \
+	    printf "ok   %-34s %5s%% >= %s%%\n" "$$suffix" "$$total" "$$min"; \
+	  else \
+	    printf "FAIL %-34s %5s%% <  %s%%\n" "$$suffix" "$$total" "$$min"; status=1; \
+	  fi; \
+	done; \
+	exit $$status
+
 .PHONY: vet
 vet: ## run go vet
 	$(GO) vet ./...
@@ -129,12 +220,34 @@ vuln: ## scan dependencies + reachable code for known vulnerabilities (govulnche
 licenses: ## fail on copyleft dependency licenses (GPL/AGPL/LGPL forbidden; MPL = reciprocal)
 	$(GOLICENSES) check ./... --disallowed_types=forbidden,restricted,reciprocal
 
+# Git mode: scans the tracked history, not just the working tree. A secret
+# committed once and reverted in the next commit is still in the history and
+# still a secret — and this daemon handles a Zendure cloud app token plus
+# MQTT credentials. Deliberately configless: the default ruleset is clean
+# over the whole history, so there is no allowlist to hide behind. The first
+# fixture that trips a rule gets a .gitleaks.toml entry with a reason,
+# rather than being pre-exempted by a blanket testdata/docs carve-out.
+.PHONY: secrets
+secrets: ## scan the tracked git history for committed secrets (gitleaks)
+	$(GO) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) git --no-banner --redact .
+
 .PHONY: tidy
 tidy: ## sync go.mod / go.sum
 	$(GO) mod tidy
 
+# Non-destructive by construction: go.mod/go.sum are stashed first and
+# restored on failure, so this is safe inside `make check` — a gate that
+# rewrote the tree as a side effect of reporting would be its own problem.
+# Drift matters here immediately: the ADR 0070 migration is a series of
+# go-hamqtt version bumps, and a bump is exactly what leaves a stale go.sum
+# line, an orphaned require, or an indirect that has become direct.
+.PHONY: tidy-check
+tidy-check: ## verify go.mod/go.sum are tidy + module checksums verify (CI gate)
+	$(GO) mod verify
+	@tmp=$$(mktemp -d); 	cp go.mod go.sum "$$tmp/"; 	$(GO) mod tidy; 	if diff -q "$$tmp/go.mod" go.mod >/dev/null && diff -q "$$tmp/go.sum" go.sum >/dev/null; then 	  rm -rf "$$tmp"; echo "go.mod/go.sum are tidy"; 	else 	  echo "go.mod/go.sum are not tidy — run 'make tidy' and commit the result:"; 	  diff -u "$$tmp/go.mod" go.mod || true; 	  diff -u "$$tmp/go.sum" go.sum || true; 	  cp "$$tmp/go.mod" "$$tmp/go.sum" .; rm -rf "$$tmp"; 	  exit 1; 	fi
+
 .PHONY: check
-check: vet fmt-check lint test ## the pre-commit / pre-push gate
+check: vet fmt-check lint tidy-check test ## the pre-commit / pre-push gate
 
 .PHONY: run
 run: build-daemon ## run the daemon against ./config.yaml
