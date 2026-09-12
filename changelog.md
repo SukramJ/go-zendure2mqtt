@@ -4,6 +4,58 @@
 
 ### Added
 
+- **The shared Home Assistant discovery library now provably reproduces this
+  bridge's published payload, byte for byte, for all 29 entities — and
+  publishes nothing.** `github.com/SukramJ/go-hamqtt v0.27.0` is a new
+  dependency and `internal/harender` is a second, parallel rendering path
+  built on it: a `topic.Layout` over this bridge's own topic builder, one
+  `model.Device` per unit and per battery pack, a `model.Basic` entity per
+  resolved point, and a `discovery.Context` that freezes every identity
+  string. New tests in `internal/coordinator` render that model through
+  `discovery.RenderComponent` and compare the result against the four golden
+  files pinned in the previous release.
+
+  They match exactly. All 29 discovery payloads and all 29 retained config
+  topics, plus all 14 payloads of the identity-hazard pin, are identical to
+  what `internal/hass` publishes today — `unique_id`, `default_entity_id`,
+  device `identifiers`, `via_device`, `state_topic`, `command_topic`, the
+  flat `availability_topic` / `payload_available` / `payload_not_available`
+  triple, `device_class`, `state_class`, `unit_of_measurement`, `min`/`max`/
+  `step`, `options`, `payload_on`/`payload_off`, `model_id`,
+  `serial_number`, `configuration_url` and `sw_version`. So are all 30 state
+  topics and all nine command topics. `discovery.Validate` accepts the
+  rendered device bundles and `discovery.ValidateBody` accepts every payload
+  — including the flat availability triple, which was an open question, and
+  which no test in this repository had ever checked against Home Assistant's
+  schemas at all.
+
+  **Nothing about the daemon changes.** `internal/harender` is imported by
+  tests only; no publish path, no MQTT bootstrap and no discovery payload is
+  touched, and the pinned fixtures were never regenerated. This is ADR 0070
+  phase 5, step 2 — the pilot's decisive experiment, run on a branch with
+  nothing on a broker, because the alternative place to discover a mismatch
+  is a user's Home Assistant, where a changed `unique_id` silently costs an
+  entity its history and a changed `state_topic` silently makes it unknown
+  forever.
+
+  Four things the experiment settled that reading the library could not:
+  the rendered bytes; that the flat availability keys validate; that
+  `publisher.LegacyTopicByUniqueID` — and not `LegacyTopicByObjectID`, and
+  not the pre-v0.27.0 five-segment default — is the form that matches this
+  fleet's 29 retained config topics, which is what the eventual bundle
+  migration has to retract before it publishes; and that `model.Slot`'s
+  `Bucket` is provably inert for this bridge, which is now asserted rather
+  than assumed.
+
+  Also exported, additively and with no behaviour change: `hass.UniqueID`,
+  `hass.EntityObjectID`, `hass.DeviceName`, `hass.PackSoftVersion` and
+  `catalog.Entry.Codes`. The parallel path calls the production identity
+  functions rather than restating them, so the two paths cannot drift — and
+  so that the two pinned *defects* stay reproduced: the pack-serial
+  hyphen-vs-underscore `default_entity_id` collision, and the dropped "é".
+
+### Added
+
 - **The published Home Assistant discovery payload is now pinned, byte for
   byte.** `internal/coordinator/testdata/` holds four new golden files: the
   29 retained discovery configs a SolarFlow 2400 AC with one battery pack

@@ -117,6 +117,14 @@ func (e Entry) CodeForLabel(label string) (string, bool) {
 	return "", false
 }
 
+// Codes returns the value-map codes in the order [Entry.Options] renders
+// their labels, which is the order Home Assistant shows a select's options.
+//
+// Exported so the shared-model Enum of internal/harender can be built with
+// this bridge's own ordering rather than a second sort beside it: the option
+// list is a published payload key, and two sorts are two answers.
+func (e Entry) Codes() []string { return e.sortedCodes() }
+
 // sortedCodes returns the value-map codes in ascending numeric order
 // (lexical fallback for non-numeric codes) for deterministic option lists.
 func (e Entry) sortedCodes() []string {
