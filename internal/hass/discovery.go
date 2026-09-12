@@ -106,10 +106,29 @@ func (d *Discovery) Forget(configTopics []string) {
 
 // uniqueID derives a stable, broker-wide-unique entity id.
 func (d *Discovery) uniqueID(sn string, p process.Point) string {
-	if p.PackSN != "" {
-		return fmt.Sprintf("%s_%s_pack_%s_%s", d.root, sn, p.PackSN, p.Topic)
+	return UniqueID(d.root, sn, p.PackSN, p.Topic)
+}
+
+// UniqueID is the formula behind every entity's unique_id, exported so a
+// second renderer can be proved to produce the same string rather than a
+// second copy of the same formula.
+//
+// Home Assistant keys its entity registry on this and has no migration path
+// for it, so the string is frozen: ADR 0070 sanctions a re-key for the
+// bridges and this one declines it (ADR 0070 phase 5, step 2). A parallel
+// rendering path that re-derived the formula instead of calling this could
+// drift from it without any pin noticing, because the pins compare the two
+// against each other and would simply agree on a wrong answer.
+//
+// Note that root is config.MQTTTopic and therefore operator-configurable,
+// which is F2 of the phase-5 measurement: changing it re-keys every entity.
+// That defect is preserved here deliberately — this function is a record of
+// what is published today, not of what should be.
+func UniqueID(root, sn, packSN, topicLeaf string) string {
+	if packSN != "" {
+		return fmt.Sprintf("%s_%s_pack_%s_%s", root, sn, packSN, topicLeaf)
 	}
-	return fmt.Sprintf("%s_%s_%s", d.root, sn, p.Topic)
+	return fmt.Sprintf("%s_%s_%s", root, sn, topicLeaf)
 }
 
 // config builds the (topic, payload) for one entity.
@@ -122,7 +141,7 @@ func (d *Discovery) config(dev source.Device, report *model.Report, p process.Po
 	// more (0 of 32 as of HA 2026.9), so it was silently dropped on arrival.
 	// unique_id is deliberately independent of the seed, so the entity identity
 	// never changes with the name.
-	seed := entityObjectID(d.deviceName(dev, p), p.Topic)
+	seed := EntityObjectID(d.deviceName(dev, p), p.Topic)
 	cfg := map[string]any{
 		"name":              e.FriendlyName(d.lang),
 		"unique_id":         uniqueID,
@@ -211,15 +230,17 @@ func (d *Discovery) deviceBlock(dev source.Device, report *model.Report, p proce
 		"serial_number": p.PackSN,
 		"via_device":    mainID,
 	}
-	if sw := packSoftVersion(report, p.PackSN); sw != "" {
+	if sw := PackSoftVersion(report, p.PackSN); sw != "" {
 		blk["sw_version"] = sw
 	}
 	return blk
 }
 
-// packSoftVersion returns a battery pack's firmware version (packData.softVersion)
-// as a string, or "" if the report does not carry it.
-func packSoftVersion(report *model.Report, packSN string) string {
+// PackSoftVersion returns a battery pack's firmware version
+// (packData.softVersion) as a string, or "" if the report does not carry it.
+// It is the pack sub-device's only source of sw_version, and it is exported
+// for the parallel rendering path of ADR 0070 phase 5, step 2.
+func PackSoftVersion(report *model.Report, packSN string) string {
 	if report == nil {
 		return ""
 	}
@@ -248,21 +269,37 @@ func numString(v any) string {
 // A configured DeviceName replaces the "Zendure <SN>" default; when unset
 // the serial-number default applies.
 func (d *Discovery) deviceName(dev source.Device, p process.Point) string {
+	return DeviceName(dev, p.PackSN)
+}
+
+// DeviceName is the HA device friendly name for a unit or one of its battery
+// packs, exported for the same reason as [UniqueID]: it seeds
+// default_entity_id through [EntityObjectID], so a second renderer has to
+// call it rather than restate it.
+func DeviceName(dev source.Device, packSN string) string {
 	base := "Zendure " + dev.SN
 	if dev.DeviceName != "" {
 		base = dev.DeviceName
 	}
-	if p.PackSN == "" {
+	if packSN == "" {
 		return base
 	}
-	return base + " Pack " + p.PackSN
+	return base + " Pack " + packSN
 }
 
-// entityObjectID builds an English, language-independent entity object id
+// EntityObjectID builds an English, language-independent entity object id
 // from the device name and the English topic, e.g.
 // "zendure_hoa1_electric_level". It seeds default_entity_id so entity_ids
 // stay stable while the display name is localized.
-func entityObjectID(deviceName, topic string) string {
+//
+// Exported for the parallel rendering path of ADR 0070 phase 5, step 2, and
+// exported rather than reimplemented there on purpose: two of the strings
+// this produces are pinned *defects* — a pack-serial hyphen-vs-underscore
+// collision that gives two entities one default_entity_id (F8), and a
+// dropped "é" where the shared library transliterates — and a defect is only
+// pinned if the thing under test is the function that has it. A copy would
+// let one of the two paths be fixed while the other kept the pin green.
+func EntityObjectID(deviceName, topic string) string {
 	return collapseTokens(slugify(deviceName + "_" + topic))
 }
 
