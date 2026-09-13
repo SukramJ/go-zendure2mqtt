@@ -1,7 +1,11 @@
 # ADR 0070 phase 5 — pilot measurement for go-zendure2mqtt
 
-- Status: measurement, not a decision
-- Date: 2026-09-12
+- Status: **closed**. Sections 1-7 and findings F1-F8 are the measurement,
+  which took no decision and fixed nothing; the closing section
+  *[Phase 5 outcome](#phase-5-outcome)* records what phase 5 shipped, every
+  finding's disposition, and every claim in the sections above that the
+  programme has since settled differently.
+- Date: 2026-09-12 (measurement); 2026-09-13 (outcome section)
 - Subject: [ADR 0070](https://github.com/SukramJ/openccu-loom/blob/main/docs/adr/0070-shared-ha-discovery-model-module.md)
   and its rollout table, row *"5 | `go-zendure2mqtt` (375 LOC) as pilot |
   Smallest surface, catalog-driven, single device hierarchy"*
@@ -20,6 +24,16 @@ Every count below is measured, and the command is stated where the number
 could be got two ways. Two figures in circulation turn out to be right about
 the wrong tree, and one is off by three lines; both are explained rather than
 quietly corrected.
+
+> **A convention, declared once.** Sections 1-7 and F1-F8 are a **frozen
+> snapshot** of `origin/main` at `d7b9d4a` on 2026-09-12, and they are left
+> exactly as measured even where the programme has since moved past them.
+> They are stale by design; they are never silently wrong. Every correction
+> lives in [Phase 5 outcome](#phase-5-outcome) and every corrected passage
+> above carries an inline **Corrected** pointer to it. Editing a measurement
+> after the fact destroys the only thing a measurement is for — knowing what
+> was true when the decision was taken. Borrowed from go-unifi2mqtt's phase 9
+> note, which declares the same rule.
 
 > **A note on which tree.** The local working copy at the time of measuring sat
 > on branch `chore/exclude-go-ha-catalog-from-automerge` (`6187f94`), which is
@@ -311,7 +325,7 @@ last column. Library references are `go-hamqtt` v0.26.0.
 
 | String | Before (measured) | After (library default) | After (preserving) | How |
 | --- | --- | --- | --- | --- |
-| Discovery topic | `homeassistant/sensor/zendure2mqtt_SF2400AC0012345_electric_level/config` ×29 | `homeassistant/device/zendure2mqtt_sf2400ac0012345/config` ×1 per device | **cannot be preserved** | device-bundle only, `discovery/bundle.go:5-12` |
+| Discovery topic | `homeassistant/sensor/zendure2mqtt_SF2400AC0012345_electric_level/config` ×29 | `homeassistant/device/zendure2mqtt_sf2400ac0012345/config` ×1 per device | **cannot be preserved** ([**Corrected**](#c3--the-shipped-bundle-topic-is-not-case-folded): the ×1 topic ships un-folded) | device-bundle only, `discovery/bundle.go:5-12` |
 | `unique_id` | `zendure2mqtt_SF2400AC0012345_electric_level` | `zendure2mqtt_sf2400ac0012345_electric_level` — **case-folded** | identical to before | override `Context.UniqueID` (`discovery/render.go:30-45`); the field is a plain string, `discovery/bundle.go:80` |
 | device `identifiers` | `["zendure2mqtt_SF2400AC0012345"]` | `["zendure2mqtt_sf2400ac0012345"]` if built from a slug | identical to before | `model.Identifier{Namespace: "", Value: "zendure2mqtt_SF2400AC0012345"}` — the empty namespace is the documented escape hatch for a published fleet (`model/device.go:41-58`) |
 | pack `identifiers` | `["…_pack_AO4H2301X01"]` | as above | identical | same, one `model.Device` per pack with `Via` set |
@@ -382,6 +396,9 @@ it. Each needs one concrete act to settle:
   `WARNING` line and a retained bundle that does nothing.
   *Settled by:* one throwaway device against a live HA 2026.9, watching the
   log, exactly as the amendment was taken.
+  *(**Corrected** — settled, and not by this repo: go-hamqtt v0.27.0 took the
+  measurement and built the ordering into `Runtime.PublishBundle`. See
+  [C2](#c2--the-retract-then-publish-gate-is-closed).)*
 
 And one thing is **already settled and is a trap**:
 `publisher.SupersededTopics(prefix, b)` (`publisher/publisher.go:568-583`) —
@@ -671,6 +688,8 @@ Assistant restart every entity sits at `unknown` until the next poll"`) does
 not apply: every state publish is retained (`coordinator.go:171`, the `true`
 argument), as is discovery (`discovery.go:78`) and the bridge status
 (`coordinator.go:128,138`).
+*(**Corrected** — the contrast no longer holds; mtec fixed it. See
+[C1](#c1--the-mtec-contrast-on-non-retained-state-has-expired).)*
 
 **The umlaut slug — not present here.** `slugify` transliterates
 (`discovery.go:269-270`), so `Größe` becomes `grosse`, not `gr_e`. The ADR
@@ -723,7 +742,9 @@ But the load-bearing property is a different one:
 > the pilot can prove the *runtime* — bundle migration, dedup, sweep ordering,
 > birth, command routing — on an installed base, with `unique_id` frozen, and
 > settle the retract-then-publish ordering against a live Home Assistant at a
-> cost of zero orphaned entities. That is a much stronger result than a
+> cost of zero orphaned entities. *(**Corrected** — the ordering was
+> already settled by the time step 5 ran; see
+> [C2](#c2--the-retract-then-publish-gate-is-closed).)* That is a much stronger result than a
 > re-keyed pilot, and it is the same discipline the first amendment imposed on
 > loom.
 
@@ -951,3 +972,176 @@ suffixing, silently. Low likelihood, no guard, and — note — the library's
 `topic.Slug` **preserves** the hyphen (`topic/topic.go:174-179`) specifically
 to avoid this collision class, which is one concrete thing the migration would
 fix.
+
+---
+
+## Phase 5 outcome
+
+- Status: **closed**, 2026-09-13.
+- Shipped in PRs [#39](https://github.com/SukramJ/go-zendure2mqtt/pull/39),
+  [#41](https://github.com/SukramJ/go-zendure2mqtt/pull/41),
+  [#44](https://github.com/SukramJ/go-zendure2mqtt/pull/44),
+  [#45](https://github.com/SukramJ/go-zendure2mqtt/pull/45) and
+  [#46](https://github.com/SukramJ/go-zendure2mqtt/pull/46), following the
+  sequencing recommended in [§7.2](#72-recommended-sequencing): the pins
+  first, then the byte-equality proof that published nothing, then the state
+  plane, birth, LWT and sweep, then the device document with its retractions,
+  then the reconnect fix the review of those found.
+- Measured against, at close: `github.com/SukramJ/go-hamqtt` v0.34.0,
+  `github.com/SukramJ/go-mqtt` v1.4.0.
+
+Everything above this line is the 2026-09-12 snapshot and stays that way. What
+follows is every place the programme has since learned something the snapshot
+does not know.
+
+### Corrections to the sections above
+
+<a id="c1--the-mtec-contrast-on-non-retained-state-has-expired"></a>
+#### C1 — the mtec contrast on non-retained state has expired
+
+[§6](#6-what-this-bridge-does-better-or-differently-than-loom) lists
+*"Non-retained state — not present here"* as something this bridge does better
+than `go-mtec2mqtt`. The observation about **this** repo is still correct —
+every state publish, every config and the bridge status are retained — but the
+contrast is gone: mtec fixed its side in its own phase 6
+(`internal/coordinator/poll.go:171-180`). Read the bullet as a statement about
+this repo alone, not as a comparison. Nothing here follows from it either way;
+it was evidence for *"zendure is the right pilot"*, an argument the outcome
+below settles on other grounds.
+
+<a id="c2--the-retract-then-publish-gate-is-closed"></a>
+#### C2 — the retract-then-publish gate is closed, and was not closed here
+
+[§3.3](#33-what-blocks-the-rest-of-the-after-column-and-what-settles-it) lists
+*"whether Home Assistant's conflict refusal fires for this bridge's
+four-segment legacy topic shape"* as outstanding, *settled by* one throwaway
+device against a live HA 2026.9; [§7.1](#71-is-zendure-the-right-pilot) then
+counts settling that ordering among the pilot's contributions.
+
+It was settled before step 5 ran, and by the library rather than by this
+bridge: **go-hamqtt v0.27.0** took the live measurement and built the
+conclusion into `publisher.Runtime.PublishBundle`, which retracts the
+superseded per-entity configs *before* writing the document and reports a
+failed retraction rather than publishing into the conflict. Home Assistant
+keys the refusal on the entity, not on the topic's arity, exactly as §3.3
+guessed — the four-segment form refuses identically. This repo consumed the
+result; it did not produce it. What phase 5 *did* contribute is the fleet
+measurement underneath it: 29 of 29 configs on the four-segment form, 0 of 29
+on the library's five-segment default (PR #41), which is why
+`publisher.Config.LegacyEntityTopics` has to be stated here at all.
+
+The §3.3 paragraph that was **right** and is worth re-reading is the one
+immediately after it, *"one thing is already settled and is a trap"*: stating
+a legacy form **replaces** the library default rather than adding to it. That
+trap was sprung after all — see [D-F11](#d-f11) below.
+
+<a id="c3--the-shipped-bundle-topic-is-not-case-folded"></a>
+#### C3 — the shipped bundle topic is not case-folded
+
+[§3.1](#31-before--after-per-string)'s *Discovery topic* row renders the after
+column as `homeassistant/device/zendure2mqtt_sf2400ac0012345/config`, lower
+case. That is the **library default** — `discovery.NodeID` runs the device
+identity through `topic.Slug`, which case-folds — and the row is correct as a
+statement about the default. It is not what this bridge ships.
+
+`harender.Context.NodeID` overrides it and returns the device identifier
+verbatim, so the retained topic is
+`homeassistant/device/zendure2mqtt_SF2400AC0012345/config`, with the serial in
+its original case, and the pack's is
+`…_pack_<packSN>/config` on the same terms. The override is deliberate and
+documented at its definition: the node id is a topic segment this fleet has
+never had, nothing in Home Assistant's registry keys on it, and folding it
+would leave the serial spelled one way in the document topic and another way
+in every state topic and every `identifiers` entry. One spelling of a serial,
+everywhere.
+
+The practical consequence is an operator one, and it is why the rollback
+instructions in `README.md`, `changelog.md` and `addon/DOCS.md` now tell the
+reader to copy the topic out of the daemon's own `hass.bundle_published` log
+line rather than compose it: a reader who took §3.1's row literally would
+publish an empty retained payload to a lower-cased topic that does not exist
+and clear nothing.
+
+### Every finding's disposition
+
+F1-F8, each ending in one of three states: **fixed**, **left with a reason**,
+or **open with what it would take**. Nothing is left implicit.
+
+| Finding | Severity | Where | Disposition |
+| --- | --- | --- | --- |
+| [**F1**](#f1) — a config is published once per process, however much it changes | high | #44, #45 | **Half fixed, half left.** `publisher.Runtime.Publish` compares payload *bytes*, so a changed document does reach the broker — but `hass.Discovery.Publish` still guards on a unique_id never seen in this process, so a catalog edit still waits for a restart. Left knowingly: the guard is the document-level dedup the sweep and the birth resync both read, and narrowing it inside the step that also moved every payload would have made the byte-equality proof unreadable. The narrowing the document form *did* bring is recorded at `discovery.go`: a new entity rewrites its device's whole document, siblings included. |
+| [**F2**](#f2) — `unique_id` is namespaced with the configurable MQTT root | high | #45, docs | **Left, and documented as a contract.** Changing `MQTT_TOPIC` re-keys every entity *and* strands the old retained configs outside the cleanup's reach. Fixing it means re-keying the installed base, which is exactly the clean break the pilot exists to decline. `changelog.md`, `README.md` and `addon/DOCS.md` now say so; the sweep's own predicate says why in `internal/hass/cleanup.go`. |
+| [**F3**](#f3) — a writable pack property would publish an unroutable `command_topic` | medium | #44 | **Left, stated, and pinned.** 0 of 7 pack properties is writable, so it is latent. `coordinator.CommandFilter`'s doc comment states the gap directly rather than leaving it to be rediscovered, and `library_render_test.go` asserts the rendered command topic so the day a pack property becomes writable the pin moves. |
+| [**F4**](#f4) — no per-device availability | medium | — | **Open, additive, no longer gated.** Every entity's only availability source is the bridge LWT, so an unplugged device keeps its last values while the bridge is up. The fix is a second `availability` entry per entity, which the library models (`model.LevelDevice`) and this bridge's `harender.Layout` deliberately leaves empty — asserted, not forgotten, in `TestLayoutHasNoDeviceAvailabilityTopic`. It needs a per-device reachability signal from the backend, which is its own change. |
+| [**F5**](#f5) — a `select` with an unmapped code publishes a state HA rejects | medium | — | **Open.** `applyEntry` still returns the raw value when the catalog's value map has no label for it, so an `acMode` of `0` publishes `0` into a select whose options are `charge`/`discharge`. The fix is one line and it is a *payload* change, which is why it was kept out of a step whose whole claim was that no byte moved. Nothing now blocks it. |
+| [**F6**](#f6) — no Home Assistant birth subscription | high | #44 | **Fixed.** `publisher.Runtime.WatchBirth` replays every declared config on the rising edge of HA's birth message, so a broker that loses its retained store no longer costs the fleet until the next restart. |
+| [**F7**](#f7) — `binary_sensor` is accepted but uninterpretable | low | #45 | **Left, and reproduced on purpose.** The catalog loader admits it and no renderer emits `payload_on`/`payload_off`; 0 of 27 entries use it. `harender`'s default case states the gap where the next person editing `zendure.yaml` will meet it. Adding the two keys would be a payload change inside the byte-equality step. |
+| [**F8**](#f8) — two pack serials differing only in `-` vs `_` collide on `default_entity_id` | low | #41 | **Left, and pinned as a known defect.** Two seeds are frozen in the identity pins *reproducing* the collision, so the day the slug is swapped the diff names the entities it renames. A parallel path that quietly did the right thing would have made that fix invisible, which is the whole reason `harender` calls `hass.EntityObjectID` rather than restating the formula. |
+
+### What the cross-repository audit found afterwards
+
+Four items, found by auditing the finished programme across all five
+consumers rather than by reading this repo alone. F9 is this section; F10 and
+F13 belong to sibling repositories.
+
+<a id="d-f11"></a>
+**F11 — `publisher.Config.LegacyEntityTopics` was spelled twice with nothing
+comparing them. Fixed.** The composition root stated it and the golden fixture
+re-stated it; deleting it from `cmd/zendure2mqtt` left the entire suite green
+while the shipped daemon retracted 29 topics the fleet does not hold and
+published its device documents into a tree still holding the real per-entity
+configs — the silent refusal [C2](#c2--the-retract-then-publish-gate-is-closed)
+describes, sprung by the trap §3.3 had already named. It is byte-for-byte the
+defect `go-mtec2mqtt` found in its own phase 6, and the fifth instance of the
+shape in the programme. Fixed with mtec's three-part answer:
+`coordinator.HARuntimeConfig` is the single spelling, `wantLegacyForms` is a
+probe **derived** from it rather than a second literal, and
+`coordinator.New` panics when it is handed a runtime that was not built from
+it. The fixtures now run on the daemon's own statement, so the deletion
+mutation goes red.
+
+**F12 — the rollback instructions were wrong in two ways. Fixed.**
+`changelog.md` and `addon/DOCS.md` hard-coded `homeassistant/` where the
+prefix is `HASS_BASE_TOPIC`, so an operator who changed it cleared nothing and
+the downgrade failed as silently as the upgrade it mirrors; the
+`mosquitto_pub` line carried no `-h`/`-u`/`-P` while the add-on copy pointed
+its readers — all of them on an authenticated Supervisor broker — straight at
+it; and `README.md` had no rollback section at all. All three now agree, all
+three carry the credentials, and all three tell the operator to copy the topic
+verbatim from the daemon's `hass.bundle_published` log line rather than
+compose it — the pattern `go-daikin2mqtt` and `go-unifi2mqtt` both use, which
+also disposes of [C3](#c3--the-shipped-bundle-topic-is-not-case-folded). The
+node-id half was already right here and was left alone: this bridge publishes
+the raw identifier and said so.
+
+**F14 — `StateConfig.PulseQoS` was unstated. Fixed.** It is the one field in
+`publisher` whose default is QoS 0 rather than QoS 1, so the omission was
+correct only by coincidence — and the two diverge the moment this bridge's
+state QoS is not 0, which no single-configuration test would see. go-hamqtt
+v0.34.0 added `publisher.state.pulse_qos_unstated`, so since that bump the
+omission has been visible in every operator's log at every boot. Now stated
+with `publisher.QoSAtMostOnce`, in `coordinator.HAStateConfig` — one spelling,
+for the same reason as F11.
+
+### What the audit confirmed sound, and what it added
+
+- **Clean on all four programme-wide decisions.** `Reset()` in
+  `PublishOnline` is correct and correctly reasoned: `Declared()` is
+  load-bearing for this bridge's sweep, which is why `Reset` beat a rebuild.
+  Note that go-hamqtt v0.34.0's own CHANGELOG still claims this repo holds a
+  process-lifetime runtime and recommends what it already does; that is the
+  library's error, not this repo's, and it is recorded here so the next reader
+  does not "fix" the daemon to match a stale note.
+- **The ownership predicate is safe against a nested sibling root** — but for
+  a reason it did not state. `ownsIdentity` requires
+  `HasPrefix(uniqueID, root+"_")`, and a nested root yields
+  `zendure2mqtt/garage_SN_leaf`, which does not start with `zendure2mqtt_`:
+  **the `_` separator is what defeats the nested `/`**. The state-topic half
+  tests `<root>/` and would accept on its own, and `OwnsDeviceConfigTopic` is
+  a second gate only because it is serial-scoped. `go-homeconnect2mqtt` has a
+  live entity-deletion defect from exactly this shape. The separator's role is
+  now written into `internal/hass/cleanup.go`'s comment and pinned by two
+  `TestIsOwnConfig` cases, so a refactor that harmonises the separators to `/`
+  cannot open the hole in silence.
+- **The slug decision is well recorded**, [F8](#f8): two seeds pinned as known
+  defects, deliberately reproduced so a later fix is visible.

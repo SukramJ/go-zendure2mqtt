@@ -43,14 +43,38 @@ For a standard Home Assistant install with the Mosquitto broker:
 
 State is published under `<mqtt_topic>/<sn>/<group>/<key>/state`, battery packs
 under `<mqtt_topic>/<sn>/battery/<packSn>/<key>/state`, and writable entities
-listen on `…/set`. Home Assistant discovery uses the device-based format: one retained document
-per device under `homeassistant/device/<node_id>/config`, where the node id is
-the device identifier (`zendure2mqtt_<sn>`, and
-`zendure2mqtt_<sn>_pack_<packSn>` for each battery pack).
+listen on `…/set`. Home Assistant discovery uses the device-based format: one
+retained document per device under `<hass_base>/device/<node_id>/config`, where
+`<hass_base>` is the discovery prefix (`homeassistant` for the add-on, which
+does not expose it as an option) and the node id is the device identifier
+(`<mqtt_topic>_<sn>`, and `<mqtt_topic>_<sn>_pack_<packSn>` for each battery
+pack) — the serial in its original case.
 
 Earlier releases published one retained config per entity under
-`homeassistant/<platform>/<unique_id>/config`. The first start after
+`<hass_base>/<platform>/<unique_id>/config`. The first start after
 upgrading retracts those and then publishes the documents, in that order.
 Your entities keep their entity ids, names, icons, areas, history and
-automations, because `unique_id` is unchanged. Downgrading needs the retained
-documents cleared by hand first — see the changelog.
+automations, because `unique_id` is unchanged.
+
+### Downgrading to 0.7.x or earlier
+
+The retained device documents stay on the broker, and an older release
+republishing per-entity configs is refused by Home Assistant for exactly the
+same reason, symmetrically — one
+`WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line in
+Home Assistant's log and no entities. Clear every document first, one per
+device and per battery pack:
+
+```bash
+mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n
+```
+
+**Take `<topic>` verbatim from the add-on log's `hass.bundle_published`
+lines** rather than composing it. `-h`, `-u` and `-P` are not optional here:
+the add-on publishes to the Supervisor's MQTT broker, which is authenticated,
+and `mosquitto_pub` without credentials is simply refused. The broker host,
+username and password are the ones the *Mosquitto broker* add-on shows, or the
+`mqtt_server`/`mqtt_login`/`mqtt_password` options if you set them.
+
+Because nothing was re-keyed, the old release then re-adopts the same entities
+with their history intact. See the changelog for the full note.

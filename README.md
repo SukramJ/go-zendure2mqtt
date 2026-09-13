@@ -81,6 +81,42 @@ overridden via `ZENDURE_*` environment variables (e.g. `ZENDURE_MQTT_PASSWORD`).
 Booleans accept `true`/`false`. With the web UI enabled (`WEB_ENABLE`), a
 read-only dashboard is served on `WEB_BIND` (default `127.0.0.1:8080`).
 
+## Home Assistant discovery, and downgrading
+
+Discovery uses the device-based format: **one retained document per device**,
+at `<HASS_BASE_TOPIC>/device/<node-id>/config`, where the node id is the
+device identifier — `<MQTT_TOPIC>_<sn>`, and `<MQTT_TOPIC>_<sn>_pack_<packSn>`
+for each battery pack, with the serial in its original case. Releases up to
+0.7.x published one retained config per entity at
+`<HASS_BASE_TOPIC>/<platform>/<unique_id>/config`; the first start after
+upgrading retracts those and *then* publishes the documents, in that order,
+and your entities keep their ids, names, areas, history and automations
+because `unique_id` is unchanged.
+
+> **Downgrading to 0.7.x or earlier needs one manual step.** The documents
+> stay retained on the broker, and an older release republishing per-entity
+> configs is refused by Home Assistant for exactly the same reason,
+> symmetrically: one
+> `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+> in *its* log, nothing on the wire, and no entities. Clear every document
+> first:
+>
+> ```bash
+> mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n
+> ```
+>
+> **Take `<topic>` verbatim from the daemon's own `hass.bundle_published`
+> log line**, one per device and per pack, rather than composing it — the
+> prefix is `HASS_BASE_TOPIC` (default `homeassistant`, but an operator
+> setting) and the node id carries `MQTT_TOPIC` and the serial as the device
+> reports it. `-h`/`-u`/`-P` are required on an authenticated broker, which
+> the Home Assistant Mosquitto add-on is; drop them only for an anonymous
+> broker on localhost. Because nothing was re-keyed, the old release then
+> re-adopts the same entities with their history intact.
+
+See [`changelog.md`](changelog.md) for the full migration note, and
+[`addon/DOCS.md`](addon/DOCS.md) for the add-on's copy.
+
 ## Development
 
 ```bash

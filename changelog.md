@@ -4,6 +4,43 @@
 
 ### Fixed
 
+- **The daemon could have lost the statement that makes the discovery
+  migration work, with every test still green.** The per-entity topic form
+  this fleet's 29 retained configs are on
+  (`publisher.Config.LegacyEntityTopics`) was spelled once in the composition
+  root and again in the test fixtures, and nothing compared the two. Deleting
+  it from the daemon left the whole suite passing — the fixtures went on
+  exercising a runtime that still carried it — while the shipped binary would
+  have retracted 29 topics that do not exist and then published its device
+  documents into a tree still holding the real per-entity configs. Home
+  Assistant refuses that with one
+  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+  in its own log: no error on the wire, nothing in this daemon's log, and no
+  entities.
+
+  There is now one spelling, `coordinator.HARuntimeConfig`, which the
+  composition root and every fixture build from; the coordinator's
+  constructor refuses to start a daemon whose runtime was not built from it,
+  with a panic naming the consequence. No published byte changes.
+
+- **The state plane's pulse QoS is now stated.** `StateConfig.PulseQoS` is
+  the one field in go-hamqtt whose default is QoS 0 rather than QoS 1, so
+  leaving it unset was correct only by coincidence — and since go-hamqtt
+  v0.34.0 the omission has been logged as
+  `publisher.state.pulse_qos_unstated` at every boot. Stated explicitly; the
+  wire byte is unchanged.
+
+- **The downgrade instructions were wrong for anyone who changed
+  `HASS_BASE_TOPIC`, and unusable on an authenticated broker.** They
+  hard-coded `homeassistant/`, so an operator who changed the prefix would
+  have cleared nothing and the downgrade would have failed as silently as the
+  upgrade it mirrors; and the `mosquitto_pub` line carried no `-h`/`-u`/`-P`
+  although the add-on documentation points its readers — all of whom are on an
+  authenticated Supervisor broker — straight at it. `README.md` now has its
+  own rollback section (it had none), and all three documents tell you to copy
+  the topic verbatim from the daemon's new `hass.bundle_published` log line
+  rather than compose it.
+
 - **After an MQTT reconnect during the first discovery publish, most entities
   silently never appeared in Home Assistant.** One
   `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
@@ -38,6 +75,14 @@
   shape the library recommends: `Declared()` is the claim set the orphan
   sweep subtracts, and a runtime rebuilt per connection would start with it
   empty and judge live documents orphans.
+
+### Added
+
+- **`hass.bundle_published`**, one `INFO` line per retained device document,
+  carrying the whole topic. It is the string the downgrade instructions send
+  you to, because neither half is safely guessable: the prefix is
+  `HASS_BASE_TOPIC` and the node id carries `MQTT_TOPIC` and the serial in the
+  case the device reports it.
 
 ### Changed
 
@@ -125,12 +170,25 @@
   not just installing the old version: the retained device documents stay on
   the broker, and an older bridge republishing per-entity configs is refused
   by Home Assistant for exactly the same reason, symmetrically, with the same
-  single log line. Before downgrading, clear the retained documents — publish
-  an empty retained payload to `homeassistant/device/zendure2mqtt_<sn>/config`
-  and to `homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config` for
-  every device and pack (`mosquitto_pub -t <topic> -r -n`). Because nothing
-  was re-keyed, the old release then re-adopts the same entities with their
-  history intact.
+  single log line. Before downgrading, clear every retained document by
+  publishing an empty retained payload to it:
+
+  ```bash
+  mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n
+  ```
+
+  **Take `<topic>` verbatim from the daemon's own `hass.bundle_published`
+  log line**, one per device and per battery pack, rather than composing it.
+  It is `<HASS_BASE_TOPIC>/device/<node-id>/config`, and both halves are
+  things only the running daemon knows for sure: the prefix is
+  `HASS_BASE_TOPIC`, which defaults to `homeassistant` but is an operator
+  setting, and the node id is the device identifier as this bridge spells it
+  (`<MQTT_TOPIC>_<sn>`, and `<MQTT_TOPIC>_<sn>_pack_<packSn>` for each pack)
+  — the serial in its original case, deliberately not slugged. `-h`, `-u` and
+  `-P` are required on an authenticated broker, which the Home Assistant
+  Mosquitto add-on is; drop them only for an anonymous broker on localhost.
+  Because nothing was re-keyed, the old release then re-adopts the same
+  entities with their history intact.
 
   **`MQTT_TOPIC` must not be changed.** Not new, but this is the release to
   say it: it namespaces every `unique_id`, so changing it orphans every

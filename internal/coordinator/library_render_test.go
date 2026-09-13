@@ -38,12 +38,18 @@ const discoveryPrefix = "homeassistant"
 func resolvePoints(t *testing.T, dev source.Device, report *model.Report) []process.Point {
 	t.Helper()
 	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	pub := &capturingClient{}
+	// The two planes are wired even though this helper publishes nothing:
+	// New refuses a Deps without them, because a runtime not built from
+	// HARuntimeConfig retracts the wrong per-entity topic form in silence.
 	c := New(Deps{
-		Cfg:     cfg,
-		Backend: &goldenBackend{devices: []source.Device{dev}},
-		MQTT:    &capturingClient{},
-		Catalog: goldenCatalog(t),
-		Logger:  discardLogger(),
+		Cfg:        cfg,
+		Backend:    &goldenBackend{devices: []source.Device{dev}},
+		MQTT:       pub,
+		Catalog:    goldenCatalog(t),
+		Logger:     discardLogger(),
+		HARuntime:  newHARuntime(pub, cfg.MQTTTopic),
+		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
 	})
 	points := process.Resolve(report, c.deps.Catalog, cfg.Language)
 	return append(points, c.switchPoints(report)...)
