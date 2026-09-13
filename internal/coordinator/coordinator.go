@@ -222,6 +222,33 @@ func (c *Coordinator) PublishOnline(ctx context.Context) {
 	// the library's Reset documentation asks a consumer to pair it with.
 	c.deps.StatePlane.Reset()
 
+	// The same reopening on the discovery plane, and it closes a window
+	// whose only symptom is silence. publisher.Runtime memoises a superseded
+	// per-entity config as cleared the moment Transport.Publish returns nil
+	// — and this bridge publishes its discovery plane at QoS 0, where that
+	// return means Write and Flush returned and says nothing about a broker.
+	// The memo is per process; the success it records is per connection. So
+	// a retraction written to a socket that is already going away is
+	// recorded as done, the document that follows it fails and is correctly
+	// withheld, and after the link comes back the retry skips every
+	// memoised retraction and publishes the document into a tree that still
+	// holds the old per-entity configs. Home Assistant answers that with one
+	// `WARNING [mqtt.entity] Received a conflicting MQTT discovery message`
+	// line and nothing else: no error on the wire, none in this log, and the
+	// entities do not appear. Measured on this fleet at 22 of 29
+	// (TestRetractionsAreReSentAfterAReconnect).
+	//
+	// Reset rather than a rebuilt Runtime — the shape three sibling bridges
+	// adopted and the one the library recommends — because Declared() is
+	// load-bearing here: sweepOrphans subtracts it from what a window
+	// judged, and it is what keeps a second device's documents, and this
+	// device's own while a report is transiently shrunken, from being
+	// retracted as orphans. A rebuilt runtime starts with that set empty.
+	// Reset clears exactly the per-connection half (the superseded memo and
+	// the payload dedup gate) and keeps Declared and Claimed, which are
+	// statements about the process rather than about a connection.
+	c.deps.HARuntime.Reset()
+
 	if err := c.deps.HARuntime.AnnounceOnline(ctx); err != nil {
 		c.logger.Warn("coordinator.online_failed", slog.String("err", err.Error()))
 	}
