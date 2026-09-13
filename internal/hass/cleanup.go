@@ -27,6 +27,22 @@ import (
 // this bridge's MQTT root. In a document that is asked of every component,
 // because a document is owned as a whole — it is retracted as a whole — and
 // one foreign component in it would mean the topic is not ours to clear.
+//
+// The `_` in `<root>_` is load-bearing and is not cosmetic. A sibling bridge
+// configured with a *nested* root — `zendure2mqtt/garage` while this instance
+// runs on `zendure2mqtt` — mints unique_ids like
+// `zendure2mqtt/garage_SN_leaf`, and this daemon would then judge the
+// sibling's configs its own and retract them. It does not, only because
+// `"zendure2mqtt/garage_…"` does not start with `"zendure2mqtt_"`: the two
+// separators differ, so the prefix test fails on the character that follows
+// the root. Note what carries the case on its own — nothing else does. The
+// state-topic half of [Discovery.ownsIdentity] tests `<root>/`, which the
+// nested sibling's topics *do* match, so it would accept; and
+// [OwnsDeviceConfigTopic] is a second gate only because it is serial-scoped.
+// A refactor that harmonises the two separators to `/`, for tidiness or to
+// match a topic tree, silently opens a live entity-deletion hole —
+// go-homeconnect2mqtt has one from exactly this shape. Change the separator
+// and this predicate needs a different guard first.
 func (d *Discovery) IsOwnConfig(payload []byte) bool {
 	var body struct {
 		UniqueID   string `json:"unique_id"`

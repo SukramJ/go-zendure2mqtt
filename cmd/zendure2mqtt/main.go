@@ -21,7 +21,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/SukramJ/go-hamqtt/discovery"
 	"github.com/SukramJ/go-hamqtt/publisher"
 	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
@@ -97,33 +96,14 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// available forever. The client it publishes through does not exist yet,
 	// so the transport is wired in below, before anything connects.
 	//
-	// QoS 0 again, stated: see the state plane below.
+	// Every field of its config — the discovery prefix, this bridge's own
+	// status topic, QoS 0, and the per-entity topic form the migration
+	// retracts — is stated once, in coordinator.HARuntimeConfig, and the
+	// coordinator's constructor refuses a runtime that was not built from it.
+	// It used to be spelled here and again in the test fixtures, with nothing
+	// comparing the two; see that function for what the divergence cost.
 	haLink := &deferredTransport{}
-	haRuntime := publisher.New(haLink, publisher.Config{
-		Prefix:      cfg.HASSBaseTopic,
-		StatusTopic: coordinator.BridgeStatusTopic(cfg.MQTTTopic),
-		QoS:         publisher.QoSAtMostOnce,
-		// The single highest-risk statement in this daemon's wiring, and
-		// the one whose failure mode is silent. PublishBundle retracts the
-		// per-entity configs its device document supersedes before writing
-		// the document, because Home Assistant refuses a document while a
-		// per-entity config for the same unique_id is still retained — and
-		// the refusal's only evidence is one
-		// `WARNING [mqtt.entity] Received a conflicting MQTT discovery
-		// message` line, measured on HA 2026.9 on 2026-09-10/11. Which
-		// topics to retract cannot be guessed by the library: this fleet's
-		// 29 retained configs are at `<base>/<platform>/<unique_id>/config`
-		// — four segments, no node-id level, which Home Assistant permits —
-		// while the library's default renders the five-segment form and
-		// would therefore retract nothing at all. Stating a form *replaces*
-		// that default rather than adding to it, which is what makes this
-		// line sufficient and not merely helpful. PR #41 measured
-		// LegacyTopicByUniqueID against the pinned fleet: 29 of 29 exact,
-		// versus 0 of 29 for LegacyTopicByObjectID and 0 of 29 for the
-		// default.
-		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
-		Logger:             logger,
-	})
+	haRuntime := publisher.New(haLink, coordinator.HARuntimeConfig(cfg, logger))
 	will, err := haRuntime.Will()
 	if err != nil {
 		return fmt.Errorf("mqtt: %w", err)
@@ -175,30 +155,12 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 
 	// --- State plane ---
 	//
-	// QoS 0, stated rather than defaulted. Every release of this bridge has
-	// published its whole state plane at QoS 0, and publisher.StateConfig's
-	// zero value means "unset" and resolves to QoS 1 — so adopting the
-	// runtime without QoSAtMostOnce would have changed the delivery
-	// guarantee of an installed base inside a migration step whose purpose
-	// is de-duplication. That is an inherited choice being preserved, not
-	// an endorsement: an availability marker or a state value lost at QoS 0
-	// is lost, and the broker then keeps serving the previous retained
-	// value until the datapoint next changes — which for a crash is never.
-	// Changing it is its own release with its own changelog line.
-	//
-	// CommandFilters is the one thing the library can check that this
-	// bridge could not: a state topic that fell inside this process's own
-	// /set subscription would be echoed back into the command handler, and
-	// the filter is now stated once (coordinator.CommandFilter) and read by
-	// both the subscriber and the guard.
-	statePlane := publisher.NewStatePublisher(hagomqtt.Split(breaker, mqttClient), publisher.StateConfig{
-		QoS:      publisher.QoSAtMostOnce,
-		Encoding: discovery.RawEncoding,
-		CommandFilters: []string{
-			coordinator.CommandFilter(cfg.MQTTTopic),
-		},
-		Logger: logger,
-	})
+	// Both QoS fields, the payload encoding and the command-collision filter
+	// are stated once, in coordinator.HAStateConfig; see it for why each is a
+	// statement and not a default. As with the runtime above, this used to be
+	// spelled here and again in the test fixture with nothing comparing them.
+	statePlane := publisher.NewStatePublisher(hagomqtt.Split(breaker, mqttClient),
+		coordinator.HAStateConfig(cfg.MQTTTopic, logger))
 
 	// --- HA discovery (optional) ---
 	var hassDiscovery *hass.Discovery

@@ -186,6 +186,22 @@ func (d *Discovery) Publish(
 		}
 		d.byTopic[topic] = ids
 		d.mu.Unlock()
+		// Logged at Info, and the whole topic verbatim in one field, because
+		// it is the string an operator needs and cannot reliably compose: the
+		// prefix is HASS_BASE_TOPIC and the node id is this bridge's own
+		// spelling of the device identity. Downgrading to 0.7.x or earlier
+		// requires clearing exactly these retained topics first — an older
+		// release republishing per-entity configs is refused by Home
+		// Assistant for the same reason, symmetrically, with the same single
+		// WARNING line — so README.md, changelog.md and addon/DOCS.md all
+		// tell the operator to copy the topic out of this line rather than
+		// build it from parts. Change the event name or drop the field and
+		// three operator documents stop working.
+		d.logger.Info("hass.bundle_published",
+			slog.String("topic", topic),
+			slog.String("sn", dev.SN),
+			slog.String("pack", packSN),
+			slog.Int("components", len(ids)))
 	}
 	return published
 }

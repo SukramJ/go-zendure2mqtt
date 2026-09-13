@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/SukramJ/go-hamqtt/discovery"
 	"github.com/SukramJ/go-hamqtt/publisher"
 	"github.com/SukramJ/go-mqtt"
 
@@ -91,6 +93,33 @@ func New(deps Deps) *Coordinator {
 	for _, d := range deps.Backend.Devices() {
 		bySN[d.SN] = d
 	}
+	// The runtime must state the per-entity topic form this fleet is on, and
+	// it is checked here rather than trusted because getting it wrong is
+	// total, silent and invisible from every direction: a runtime built
+	// without publisher.Config.LegacyEntityTopics retracts the five-segment
+	// form nothing in this fleet uses, so the device document goes out while
+	// all 29 per-entity configs are still retained, Home Assistant refuses it
+	// with a single WARNING in its own log, and the entities simply do not
+	// appear. Nothing on the wire says so and, before this check, nothing
+	// here would have either.
+	//
+	// A panic, because it is a composition-root mistake rather than a runtime
+	// condition — the daemon cannot do its job and no operator input can make
+	// it able to. [HARuntimeConfig] is the answer; this is what makes
+	// bypassing it loud.
+	if deps.HARuntime == nil {
+		panic("coordinator: Deps.HARuntime is required; build it at the composition root with HARuntimeConfig so Will() can be read before CONNECT")
+	}
+	if want, got := wantLegacyForms(), deps.HARuntime.LegacyForms(); !slices.Equal(got, want) {
+		panic("coordinator: Deps.HARuntime states legacy config topic forms " +
+			fmt.Sprint(got) + ", want " + fmt.Sprint(want) +
+			"; build it with HARuntimeConfig, or the device document is published " +
+			"while the per-entity configs are still retained and Home Assistant " +
+			"refuses it in silence")
+	}
+	if deps.StatePlane == nil {
+		panic("coordinator: Deps.StatePlane is required; build it at the composition root so the state QoS is stated there")
+	}
 	return &Coordinator{
 		deps:        deps,
 		root:        deps.Cfg.MQTTTopic,
@@ -130,6 +159,114 @@ func CommandFilter(root string) string { return root + "/+/+/+/set" }
 // nothing on the wire naming the cause. One formula, checked against
 // harender.Layout.Bridge in TestBridgeStatusTopicIsOneString.
 func BridgeStatusTopic(root string) string { return root + "/bridge/status" }
+
+// HARuntimeConfig is the [publisher.Config] this daemon's Home Assistant
+// plane runs on, in ONE place.
+//
+// It exists because the composition root and the test fixtures each spelled
+// it out, and the spellings were compared by nothing. A mutation pass found
+// the consequence: deleting
+// [publisher.Config.LegacyEntityTopics] from the composition root was caught
+// by no test at all, because every test went on exercising a fixture runtime
+// that still carried it. The fixture's own comment even named a compensating
+// pin — for the QoS. There was none for this field.
+//
+// That field is not a detail. Omitting it makes the library retract its
+// default five-segment per-entity form, which this fleet has never used, so
+// the retraction clears nothing; the device document is then published into a
+// tree still holding all 29 per-entity configs, Home Assistant refuses it
+// with a single `WARNING [mqtt.entity] Received a conflicting MQTT discovery
+// message` line in its own log, and no entity appears. Nothing on the wire is
+// an error and nothing in this daemon's log is either. PR #41 measured
+// [publisher.LegacyTopicByUniqueID] against the pinned fleet: 29 of 29 exact,
+// versus 0 of 29 for LegacyTopicByObjectID and 0 of 29 for the default.
+//
+// Stating a form *replaces* the library's default rather than adding to it,
+// which is what makes the line sufficient and not merely helpful.
+//
+// QoS 0 is stated for the same reason it is stated on the state plane: the
+// library's zero value means "unset" and resolves to QoS 1, and every release
+// of this bridge has published its discovery plane at QoS 0.
+//
+// The logger is a parameter because the daemon and the fixtures want
+// different ones; everything else is derived from the operator's config.
+func HARuntimeConfig(cfg *config.Config, logger *slog.Logger) publisher.Config {
+	return publisher.Config{
+		Prefix:             cfg.HASSBaseTopic,
+		StatusTopic:        BridgeStatusTopic(cfg.MQTTTopic),
+		QoS:                publisher.QoSAtMostOnce,
+		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
+		Logger:             logger,
+	}
+}
+
+// wantLegacyForms is what [publisher.Runtime.LegacyForms] must report for a
+// runtime this package will drive. The library exports that accessor "for a
+// consumer's own assertion"; this is the consumer making it.
+//
+// Derived from [HARuntimeConfig] by building a throwaway runtime over a
+// transport that does nothing, rather than written out as a literal — because
+// a literal here would be the fifth spelling of the same statement and would
+// drift from the thing it guards exactly as the fixture drifted from the
+// composition root. That the form it resolves to is the one this fleet's 29
+// retained configs are actually on is asserted separately, against the pins.
+func wantLegacyForms() []string {
+	probe := publisher.New(nopTransport{}, HARuntimeConfig(&config.Config{}, slog.New(slog.DiscardHandler)))
+	defer probe.Close()
+	return probe.LegacyForms()
+}
+
+// nopTransport satisfies [publisher.Transport] for the probe above, which
+// never publishes, subscribes or unsubscribes.
+type nopTransport struct{}
+
+func (nopTransport) Publish(context.Context, string, []byte, byte, bool) error { return nil }
+
+func (nopTransport) Subscribe(context.Context, string, byte, publisher.Handler) error { return nil }
+
+func (nopTransport) Unsubscribe(context.Context, string) error { return nil }
+
+// HAStateConfig is the [publisher.StateConfig] this daemon's state plane runs
+// on, in ONE place, for the same reason as [HARuntimeConfig]: the composition
+// root and the test fixture each spelled it out and nothing compared them.
+//
+// Both QoS fields are stated, and the second one is why this function exists
+// rather than a literal at each site.
+//
+//   - QoS is [publisher.QoSAtMostOnce] — QoS 0 — because that is what every
+//     release of this bridge has published its whole state plane at, and the
+//     library's zero value means "unset" and resolves to QoS 1. Adopting the
+//     runtime without saying so would have changed the delivery guarantee of
+//     an installed base inside a migration step whose purpose is
+//     de-duplication. That is an inherited choice being preserved, not an
+//     endorsement: a state value lost at QoS 0 is lost, and the broker then
+//     keeps serving the previous retained value until the datapoint next
+//     changes — which for a crash is never. Changing it is its own release
+//     with its own changelog line.
+//   - PulseQoS is the one field in the package whose *default* is QoS 0
+//     rather than QoS 1, so leaving it unset happens to resolve to the same
+//     wire byte today. That coincidence is exactly why stating it is worth
+//     the line: the two only differ once this bridge's state QoS is not 0, so
+//     no single-configuration test would ever see the divergence. go-hamqtt
+//     v0.34.0 says so out loud at construction —
+//     `publisher.state.pulse_qos_unstated`, once per boot in every
+//     operator's log — and this is that warning answered rather than
+//     silenced.
+//
+// CommandFilters is the one thing the library can check that this bridge
+// could not: a state topic that fell inside this process's own /set
+// subscription would be echoed back into the command handler, and the filter
+// is stated once ([CommandFilter]) and read by both the subscriber and the
+// guard.
+func HAStateConfig(root string, logger *slog.Logger) publisher.StateConfig {
+	return publisher.StateConfig{
+		QoS:            publisher.QoSAtMostOnce,
+		PulseQoS:       publisher.QoSAtMostOnce,
+		Encoding:       discovery.RawEncoding,
+		CommandFilters: []string{CommandFilter(root)},
+		Logger:         logger,
+	}
+}
 
 // Run subscribes to command topics and drives the backend until ctx ends.
 func (c *Coordinator) Run(ctx context.Context) error {

@@ -608,7 +608,7 @@ func TestNodeIDIsStableDistinctAndUnfolded(t *testing.T) {
 // QoS from a different config field, and a mismatch would move the delivery
 // guarantee of the discovery plane alone.
 //
-// Mutation check: dropping QoS: publisher.QoSAtMostOnce from newHARuntime
+// Mutation check: dropping QoS: publisher.QoSAtMostOnce from HARuntimeConfig
 // makes every retraction and both documents go out at QoS 1 and fails this
 // test on all 31 records.
 func TestEveryDocumentAndRetractionIsAtMostOnce(t *testing.T) {

@@ -4,8 +4,11 @@
 package hass
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 
@@ -120,6 +123,18 @@ func TestIsOwnConfig(t *testing.T) {
 		{
 			"document foreign",
 			`{"device":{"identifiers":["zigbee2mqtt_lamp"]},"components":{"a":{"unique_id":"zigbee2mqtt_lamp_x","state_topic":"zigbee2mqtt/lamp/x"}}}`,
+			false,
+		},
+		// A sibling instance on a NESTED root, which is the shape that
+		// breaks this predicate in a sibling project. Its unique_ids read
+		// "zendure/garage_HOA9_x" and its state topics "zendure/garage/…" —
+		// so the state-topic half (`<root>/`) accepts, and only the `_`
+		// separator on the unique_id half rejects. Retracting these would
+		// delete another running bridge's entities.
+		{"per-entity nested sibling root", `{"unique_id":"zendure/garage_HOA9_x","state_topic":"zendure/garage/HOA9/now/x/state"}`, false},
+		{
+			"document nested sibling root",
+			`{"device":{"identifiers":["zendure/garage_HOA9"]},"components":{"a":{"unique_id":"zendure/garage_HOA9_a","state_topic":"zendure/garage/HOA9/now/a/state"}}}`,
 			false,
 		},
 		{
@@ -342,5 +357,41 @@ func TestRenderFailureIsReportedAndNotPublished(t *testing.T) {
 		[]process.Point{sensorPoint("electric_level", "now")})
 	if len(published) != 0 || pub.calls != 0 {
 		t.Errorf("published = %v, calls = %d, want nothing", published, pub.calls)
+	}
+}
+
+// TestBundlePublishedIsLoggedWithTheWholeTopic pins the log line three
+// operator documents send the reader to.
+//
+// `README.md`, `changelog.md` and `addon/DOCS.md` all tell an operator
+// downgrading to 0.7.x or earlier to clear the retained device documents
+// first, and all three say to take the topic **verbatim from this line**
+// rather than compose it: the prefix is the operator-settable
+// HASS_BASE_TOPIC and the node id is this bridge's own spelling of the
+// device identity (the identifier as-is, deliberately not slugged — see
+// harender.Context.NodeID). An operator who composed it from a hard-coded
+// `homeassistant/` and a guessed node id would clear nothing, and the
+// downgrade would then fail exactly as silently as the upgrade it mirrors.
+//
+// Mutation check: renaming the event, dropping the `topic` field, or logging
+// a composed fragment instead of the whole topic fails here — and should be
+// taken as a signal to fix the three documents in the same change.
+func TestBundlePublishedIsLoggedWithTheWholeTopic(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	pub := &stubPub{}
+	d := New("ha-discovery", "zendure", stubRenderer{root: "zendure"}, pub, logger)
+	dev := source.Device{SN: "HOA1", Model: "SolarFlow 2400 AC"}
+	d.Publish(context.Background(), dev, &model.Report{}, []process.Point{
+		sensorPoint("electric_level", "now"),
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "hass.bundle_published") {
+		t.Fatalf("no hass.bundle_published line logged; the operator documents point at it.\n%s", out)
+	}
+	if want := `topic=ha-discovery/device/zendure_HOA1/config`; !strings.Contains(out, want) {
+		t.Errorf("log line does not carry the whole retained topic %q:\n%s", want, out)
 	}
 }

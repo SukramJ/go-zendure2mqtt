@@ -15,7 +15,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/SukramJ/go-hamqtt/discovery"
 	"github.com/SukramJ/go-hamqtt/publisher"
 	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
@@ -198,30 +197,18 @@ func capturePublish(t *testing.T, dev source.Device, report *model.Report) map[s
 // rather than off the config: a daemon configured differently from this rig
 // would publish at a different QoS, which that pin fails on.
 func newStatePlane(pub mqtt.Client, root string) *publisher.StatePublisher {
-	return publisher.NewStatePublisher(hagomqtt.Transport(pub), publisher.StateConfig{
-		QoS:            publisher.QoSAtMostOnce,
-		Encoding:       discovery.RawEncoding,
-		CommandFilters: []string{CommandFilter(root)},
-		Logger:         discardLogger(),
-	})
+	return publisher.NewStatePublisher(hagomqtt.Transport(pub), HAStateConfig(root, discardLogger()))
 }
 
 // newHARuntime builds the Home Assistant runtime the daemon builds, over the
-// capturing client: the discovery prefix, this bridge's own status topic and
-// QoS 0 stated with publisher.QoSAtMostOnce.
+// capturing client — through the same HARuntimeConfig the composition root
+// calls, so the fixture cannot go on exercising a statement the daemon has
+// lost. That is not hypothetical: this fixture used to re-spell the whole
+// config, and deleting publisher.Config.LegacyEntityTopics from main.go was
+// caught by nothing in this suite.
 func newHARuntime(pub mqtt.Client, root string) *publisher.Runtime {
-	return publisher.New(hagomqtt.Transport(pub), publisher.Config{
-		Prefix:      "homeassistant",
-		StatusTopic: BridgeStatusTopic(root),
-		QoS:         publisher.QoSAtMostOnce,
-		// The statement whose absence fails silently: see the composition
-		// root. Without it SupersededTopics renders the five-segment form
-		// and retracts none of this fleet's four-segment configs, and Home
-		// Assistant then refuses every component of the document with one
-		// WARNING line as the only evidence.
-		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
-		Logger:             discardLogger(),
-	})
+	cfg := &config.Config{HASSBaseTopic: "homeassistant", MQTTTopic: root}
+	return publisher.New(hagomqtt.Transport(pub), HARuntimeConfig(cfg, discardLogger()))
 }
 
 // capturePublishWire is [capturePublish] plus the ordered wire log, for the
