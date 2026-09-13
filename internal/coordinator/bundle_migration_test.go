@@ -743,3 +743,70 @@ var (
 	_ publisher.Transport = hagomqtt.Transport((*capturingClient)(nil))
 	_ source.Backend      = (*goldenBackend)(nil)
 )
+
+// TestEveryEntityReferencesATopicThisBridgePublishes states, as a check
+// rather than as a reading of the payloads, the one availability fact whose
+// failure is total and silent.
+//
+// Home Assistant's availability_mode defaults to "all": every source an
+// entity names must say online, so one referenced topic that nobody ever
+// publishes leaves that entity permanently unavailable — with no error
+// anywhere, because there is nothing wrong with the config. The shared
+// library's own default availability shape is {LevelBridge, LevelDevice},
+// and the per-device level of it names a topic two sibling bridges never
+// publish; adopting that default here would have greyed out the whole fleet.
+//
+// This bridge does not have that shape and the assertion below is what says
+// so rather than assumes it: harender states hamodel.NoAvailability(), so no
+// `availability` array is rendered at all, and every entity's only
+// availability source is the flat availability_topic — one string,
+// coordinator.BridgeStatusTopic, which is simultaneously the Last Will
+// publisher.Runtime.Will() returns and the topic AnnounceOnline and
+// AnnounceOffline write. discovery.BundleAvailabilityTopics reads both
+// spellings, so a later move to the array form is checked by this test
+// without a change to it.
+//
+// The predicate is the set of topics this daemon actually publishes to,
+// stated here as the one topic it is. Nothing is checked at run time: a
+// production guard would add a failure path to the publish of a fleet whose
+// answer cannot change between builds. This is a pin, and it moves no byte.
+//
+// Mutation check, each run five times and caught five times: making
+// harender.Context.Availability return a per-device entry rather than nil,
+// which is the library's own {LevelBridge, LevelDevice} default in the shape
+// that greyed out two sibling fleets; and pointing Entity's availTopic at a
+// per-device topic instead of Layout().Bridge(). A third mutation —
+// returning the bridge topic from harender.Layout.Availability rather than
+// "" — survives, and correctly: Context.Availability returns nil before that
+// method is ever consulted, so it renders nothing. That is a fact about the
+// rendering path rather than a hole in this pin, and it is recorded here so
+// the next reader does not have to re-derive it.
+func TestEveryEntityReferencesATopicThisBridgePublishes(t *testing.T) {
+	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	published := func(topic string) bool {
+		return topic == BridgeStatusTopic("zendure2mqtt")
+	}
+
+	cases := append([]identityCase{{"fleet", goldenUnit(), goldenReport()}}, identityCases()...)
+	for _, c := range cases {
+		points := resolvePoints(t, c.dev, c.report)
+		for _, packSN := range process.Owners(points) {
+			bundle, err := r.Bundle(c.dev, c.report, packSN, points)
+			if err != nil {
+				t.Fatalf("%s/%s: Bundle: %v", c.name, packSN, err)
+			}
+			if bundle == nil {
+				continue
+			}
+			topics := discovery.BundleAvailabilityTopics(bundle)
+			if len(topics) != 1 || topics[0] != BridgeStatusTopic("zendure2mqtt") {
+				t.Errorf("%s/%s: the document's entities reference %v, want the one bridge status topic %q",
+					c.name, packSN, topics, BridgeStatusTopic("zendure2mqtt"))
+			}
+			if err := discovery.CheckBundleAvailability(bundle, published); err != nil {
+				t.Errorf("%s/%s: %v — every entity naming that topic is permanently unavailable, with nothing in any log saying so",
+					c.name, packSN, err)
+			}
+		}
+	}
+}

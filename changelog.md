@@ -2,6 +2,50 @@
 
 ## What's Changed
 
+### Fixed
+
+- **After an MQTT reconnect during the first discovery publish, most entities
+  silently never appeared in Home Assistant.** One
+  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+  in Home Assistant's log was the only evidence: no error on the wire, and
+  nothing at all in this daemon's log, because as far as it could tell both
+  publishes had succeeded.
+
+  `publisher.Runtime` records a superseded per-entity config as cleared the
+  moment `Transport.Publish` returns nil. This bridge publishes its whole
+  discovery plane at QoS 0, where that return means `Write` and `Flush`
+  returned and says nothing about a broker having applied anything. The memo
+  is per *process*; the success it records is per *connection*. So a
+  retraction written to a socket that is already going away was recorded as
+  done; the device document that followed it failed and was correctly
+  withheld; and once the link came back, the retry skipped every memoised
+  retraction and published the document into a tree that still held the old
+  per-entity configs — which is exactly the conflict Home Assistant refuses.
+
+  `Coordinator.PublishOnline`, which the MQTT lifecycle calls on every
+  (re)connect, now calls `publisher.Runtime.Reset()` beside the state plane's
+  existing reset, so the per-connection half of the runtime's memory is
+  forgotten when the connection is. Measured on this fleet before the fix: of
+  29 retractions only 7 were re-sent, both device documents were published,
+  and 22 legacy per-entity configs were still retained — i.e. 22 of 29
+  entities would not have appeared. Pinned by
+  `TestRetractionsAreReSentAfterAReconnect`, which drives a reconnect rather
+  than a process restart; a restart forgets the memo for free and is why the
+  same gap survived a release in a sibling bridge.
+
+  No published byte changes. `Runtime.Declared()` and `Runtime.Claimed()`
+  survive the reset, which is why this is `Reset` and not the rebuilt-runtime
+  shape the library recommends: `Declared()` is the claim set the orphan
+  sweep subtracts, and a runtime rebuilt per connection would start with it
+  empty and judge live documents orphans.
+
+### Changed
+
+- **`go-hamqtt` 0.27.0 → 0.34.0** (and `go-mqtt` 1.4.0 → 1.5.1, its new
+  minimum). Needed for `publisher.Runtime.Reset` above. The upgrade is
+  additive: no exported signature changed, and every pinned discovery payload
+  and state topic in this repository still matches byte for byte.
+
 ### Added
 
 - **Home Assistant's birth message is now watched, so a broker that loses
