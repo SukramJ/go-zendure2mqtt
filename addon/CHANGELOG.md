@@ -5,6 +5,33 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.8.0
+
+- **Breaking (discovery format): Home Assistant discovery is now one retained
+  *device document* per device instead of 29 per-entity configs.** The
+  add-on retracts the old configs on first start and then publishes one
+  document per unit and per battery pack. Nothing for you to do, and nothing
+  is lost: `unique_id` is unchanged, so every entity keeps its id, name,
+  area, icon, history and automations. **Home Assistant 2024.11 or newer is
+  required from this release on.**
+- **Rolling back to 0.7.x needs one manual step.** The retained device
+  documents stay on the broker and would make an older add-on's per-entity
+  configs be refused by Home Assistant — one
+  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+  in its log and no entities. Clear each document first with
+  `mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n`,
+  taking `<topic>` **verbatim from the add-on log's new
+  `hass.bundle_published` lines** rather than composing it: the prefix is
+  your `HASS_BASE_TOPIC` (default `homeassistant`, but an option), not a
+  fixed `homeassistant/`. See DOCS.md.
+- **Fixed: after an MQTT reconnect most entities could silently fail to
+  appear.** The retractions were remembered as done per process rather than
+  per connection, so a reconnect re-sent only 7 of 29 of them and published
+  the device documents anyway — leaving 22 of 29 entities missing until the
+  add-on was restarted. Fixed; no option changes.
+- New `hass.bundle_published` log line, one per retained device document, so
+  the exact topic can be copied rather than composed.
+
 ## 0.7.0
 
 - Dependency update: MQTT client library bumped to v1.3.0 (upstream audit
