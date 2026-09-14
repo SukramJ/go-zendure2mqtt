@@ -1,6 +1,45 @@
 # Unreleased
 
+# Version 0.8.0 (2026-09-14)
+
 ## What's Changed
+
+### If you run this bridge, read this first
+
+This is the ADR 0070 pilot release, and it is the one release of this project
+so far that moves a published byte. Three things decide whether an upgrade is
+uneventful.
+
+1. **The Home Assistant discovery form changed: one retained *device
+   document* per device, replacing 29 per-entity configs.** The first start
+   after the upgrade retracts the old configs and *then* publishes the
+   documents, in that order. You should see nothing happen — `unique_id` is
+   byte-identical to 0.7.x, so every entity keeps its id, name, icon, area,
+   history and every automation that names it. **Home Assistant 2024.11 or
+   newer is required from this release on.**
+
+2. **A rollback to 0.7.x is not just installing the old version.** The
+   retained device documents stay on the broker, and an older release's
+   per-entity configs are then refused by Home Assistant with one
+   `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+   and no entities. Clear each document first —
+   `mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n`, one
+   per device and per battery pack. **Take `<topic>` verbatim from the
+   daemon's new `hass.bundle_published` log line rather than composing it**:
+   the prefix is your `HASS_BASE_TOPIC` (which defaults to `homeassistant`
+   but is an operator setting — instructions that hardcoded
+   `homeassistant/` were wrong), and the node id carries `MQTT_TOPIC` and the
+   serial as the device reports it. The corrected procedure is in
+   [`README.md`](README.md), in the migration note below, and in
+   [`addon/DOCS.md`](addon/DOCS.md).
+
+3. **A defect fixed in this release: after a broker reconnect, most entities
+   could silently fail to appear.** The retraction of the old configs was
+   remembered for the lifetime of the process, not per connection, so a
+   reconnect re-sent only 7 of 29 retractions and published the device
+   documents anyway — leaving 22 of 29 entities absent, with nothing in this
+   daemon's log and nothing on the wire to say so, until the process was
+   restarted. Fixed.
 
 ### Fixed
 
