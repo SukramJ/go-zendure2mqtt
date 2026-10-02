@@ -9,10 +9,8 @@ import (
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 )
 
-func ptr(f float64) *float64 { return &f }
-
 func TestDecodeCommand(t *testing.T) {
-	bounded := catalog.Entry{Property: "inputLimit", Min: ptr(0), Max: ptr(2400)}
+	bounded := catalog.Entry{Property: "inputLimit", Min: new(float64(0)), Max: new(float64(2400))}
 
 	tests := []struct {
 		name    string

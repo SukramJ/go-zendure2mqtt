@@ -179,21 +179,19 @@ func (r Renderer) Layout() Layout { return Layout{Root: r.Root} }
 // overridden.
 func (r Renderer) Context() Context {
 	return Context{
-		StdContext: discovery.StdContext{
-			Layout: r.Layout(),
-			// Namespace is deliberately empty. StdContext.UniqueID is
-			// overridden and never consulted, and filling this with the
-			// bridge root would contradict the library's own rule that a
-			// unique-id namespace "must be a constant of the bridge, never
-			// configurable" — which this bridge breaks (F2) and which this
-			// step must not appear to endorse.
-			Namespace: "",
-			Lang:      r.Lang,
-			// The state plane publishes a bare scalar, not an envelope, so
-			// no component gets a value_template. Flipping this to
-			// EnvelopeEncoding adds one to all 29 payloads.
-			Enc: discovery.RawEncoding,
-		},
+		Layout: r.Layout(),
+		// Namespace is deliberately empty. StdContext.UniqueID is
+		// overridden and never consulted, and filling this with the
+		// bridge root would contradict the library's own rule that a
+		// unique-id namespace "must be a constant of the bridge, never
+		// configurable" — which this bridge breaks (F2) and which this
+		// step must not appear to endorse.
+		Namespace: "",
+		Lang:      r.Lang,
+		// The state plane publishes a bare scalar, not an envelope, so
+		// no component gets a value_template. Flipping this to
+		// EnvelopeEncoding adds one to all 29 payloads.
+		Enc: discovery.RawEncoding,
 	}
 }
 
@@ -304,15 +302,13 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 	}
 
 	return &Entity{
-		Basic: hamodel.Basic{
-			EntityKey:      p.Topic,
-			EntityPlatform: platform,
-			Description:    desc,
-			Binds:          binds,
-		},
-		uniqueID:   hass.UniqueID(r.Root, dev.SN, p.PackSN, p.Topic),
-		objectSeed: hass.EntityObjectID(hass.DeviceName(dev, p.PackSN), p.Topic),
-		availTopic: r.Layout().Bridge(),
+		EntityKey:      p.Topic,
+		EntityPlatform: platform,
+		Description:    desc,
+		Binds:          binds,
+		uniqueID:       hass.UniqueID(r.Root, dev.SN, p.PackSN, p.Topic),
+		objectSeed:     hass.EntityObjectID(hass.DeviceName(dev, p.PackSN), p.Topic),
+		availTopic:     r.Layout().Bridge(),
 	}, true
 }
 

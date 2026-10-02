@@ -125,11 +125,11 @@ func configCandidates(env Env, name string) []string {
 func applyEnvOverrides(raw map[string]any, env Env) {
 	kinds := configFieldKinds()
 	for _, kv := range env.Environ() {
-		eq := strings.IndexByte(kv, '=')
-		if eq < 0 {
+		before, after, ok := strings.Cut(kv, "=")
+		if !ok {
 			continue
 		}
-		key, val := kv[:eq], kv[eq+1:]
+		key, val := before, after
 		if !strings.HasPrefix(key, EnvPrefix) {
 			continue
 		}
@@ -145,10 +145,9 @@ func applyEnvOverrides(raw map[string]any, env Env) {
 // dereferenced to their element). Composite fields (slices/structs) are omitted
 // — they are not settable via the scalar env-override path.
 func configFieldKinds() map[string]reflect.Kind {
-	t := reflect.TypeOf(Config{})
+	t := reflect.TypeFor[Config]()
 	kinds := make(map[string]reflect.Kind, t.NumField())
-	for i := range t.NumField() {
-		f := t.Field(i)
+	for f := range t.Fields() {
 		tag := f.Tag.Get("yaml")
 		if tag == "" || tag == "-" {
 			continue

@@ -209,7 +209,7 @@ func FuzzResolveTopicSafety(f *testing.F) {
 				}
 				// No empty level: an empty level would silently reparent the
 				// entity under a different device in the topic tree.
-				for _, level := range strings.Split(topic, "/") {
+				for level := range strings.SplitSeq(topic, "/") {
 					if level == "" {
 						t.Fatalf("property %q / packSN %q produced topic %q with an empty level",
 							property, packSN, topic)
