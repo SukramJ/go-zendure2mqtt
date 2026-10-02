@@ -34,6 +34,20 @@ func TestDecodeTokenRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestDecodeTokenRejectsEmptySides(t *testing.T) {
+	for name, decoded := range map[string]string{
+		"empty api url":  ".KEY",
+		"empty app key":  "https://app.zendure.tech.",
+		"empty token":    "",
+		"only separator": ".",
+	} {
+		token := base64.StdEncoding.EncodeToString([]byte(decoded))
+		if _, _, err := cloud.DecodeToken(token); err == nil {
+			t.Errorf("%s: expected error for decoded token %q", name, decoded)
+		}
+	}
+}
+
 func TestMQTTCredentialsHostPort(t *testing.T) {
 	c := cloud.MQTTCredentials{URL: "mqtt.zendure.tech:8883"}
 	host, port := c.HostPort()

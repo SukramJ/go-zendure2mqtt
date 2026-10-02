@@ -89,11 +89,11 @@ func DecodeToken(token string) (apiURL, appKey string, err error) {
 		return "", "", fmt.Errorf("cloud: decode token: %w", derr)
 	}
 	decoded := strings.TrimSpace(string(raw))
-	i := strings.LastIndex(decoded, ".")
-	if i <= 0 || i == len(decoded)-1 {
+	before, after, found := strings.CutLast(decoded, ".")
+	if !found || before == "" || after == "" {
 		return "", "", fmt.Errorf("cloud: token must decode to '<api_url>.<appKey>'")
 	}
-	return decoded[:i], decoded[i+1:], nil
+	return before, after, nil
 }
 
 // sign builds the SHA1(haKey + sorted(params) + haKey) signature, upper-hex.
