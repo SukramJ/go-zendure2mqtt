@@ -1,5 +1,9 @@
 # Unreleased
 
+## What's Changed
+
+- Built with Go 1.27. Nothing changes for running the bridge; building from source now requires Go 1.27.1 or newer.
+
 # Version 0.8.0 (2026-09-14)
 
 ## What's Changed
