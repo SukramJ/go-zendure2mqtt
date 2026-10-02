@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -238,9 +239,7 @@ func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (
 
 	pub.mu.Lock()
 	out := make(map[string][]byte, len(pub.payloads))
-	for k, v := range pub.payloads {
-		out[k] = v
-	}
+	maps.Copy(out, pub.payloads)
 	pub.mu.Unlock()
 	return out, pub.wire()
 }
@@ -284,9 +283,7 @@ func discoveryEntries(t *testing.T, captured map[string][]byte) map[string]golde
 				t.Fatalf("%s: component %q is not an object", topic, key)
 			}
 			body := make(map[string]any, len(comp)+2)
-			for k, v := range comp {
-				body[k] = v
-			}
+			maps.Copy(body, comp)
 			body["device"] = doc["device"]
 			body["origin"] = doc["origin"]
 

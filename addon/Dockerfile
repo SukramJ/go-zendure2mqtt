@@ -28,7 +28,7 @@
 ARG BUILD_FROM
 
 # ---------- Stage 1: build the Go binary ----------
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -71,7 +71,7 @@ EXPOSE 8080
 # Add-on image labels (BUILD_ARCH / BUILD_VERSION are injected by the
 # Supervisor build; defaults keep manual builds from failing).
 ARG BUILD_ARCH=amd64
-ARG BUILD_VERSION=0.8.0
+ARG BUILD_VERSION=0.9.0
 LABEL \
   io.hass.version="${BUILD_VERSION}" \
   io.hass.type="addon" \

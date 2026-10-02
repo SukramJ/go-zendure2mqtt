@@ -101,7 +101,7 @@ func buildQuery(name string) []byte {
 
 // appendName encodes a dotted DNS name as length-prefixed labels.
 func appendName(b []byte, name string) []byte {
-	for _, label := range strings.Split(strings.TrimSuffix(name, "."), ".") {
+	for label := range strings.SplitSeq(strings.TrimSuffix(name, "."), ".") {
 		if label == "" {
 			continue
 		}
@@ -264,8 +264,8 @@ func parseTXT(rdata []byte) []string {
 
 // firstLabel returns the first dot-separated label of a DNS name.
 func firstLabel(name string) string {
-	if i := strings.IndexByte(name, '.'); i >= 0 {
-		return name[:i]
+	if before, _, ok := strings.Cut(name, "."); ok {
+		return before
 	}
 	return name
 }

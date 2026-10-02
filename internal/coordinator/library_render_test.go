@@ -6,6 +6,7 @@ package coordinator
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"testing"
@@ -205,9 +206,7 @@ func legacyPins(t *testing.T) (unit, pack map[string]goldenEntry) {
 func legacyAll(t *testing.T) map[string]goldenEntry {
 	t.Helper()
 	unit, pack := legacyPins(t)
-	for uid, e := range pack {
-		unit[uid] = e
-	}
+	maps.Copy(unit, pack)
 	return unit
 }
 

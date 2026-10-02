@@ -6,6 +6,7 @@ package coordinator
 import (
 	"bytes"
 	"context"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -44,9 +45,7 @@ type fakeBroker struct {
 
 func newFakeBroker(retained map[string][]byte) *fakeBroker {
 	seeded := make(map[string][]byte, len(retained))
-	for k, v := range retained {
-		seeded[k] = v
-	}
+	maps.Copy(seeded, retained)
 	return &fakeBroker{retained: seeded, subs: map[string]mqtt.MessageHandler{}}
 }
 

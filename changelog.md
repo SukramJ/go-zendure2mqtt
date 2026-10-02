@@ -1,5 +1,14 @@
 # Unreleased
 
+# Version 0.9.0 (2026-10-02)
+
+## What's Changed
+
+- Built with Go 1.27.1. Nothing changes for running the bridge or the add-on: no option, topic, entity or discovery payload moves. Building from source now requires Go 1.27.1 or newer.
+- Dependency update: the MQTT client library (go-mqtt v1.6.0), the Home Assistant catalog (go-ha-catalog v0.3.0) and the discovery library (go-hamqtt v0.35.0) move to their Go 1.27 releases.
+- Internal: the source was modernised with the Go 1.27 `go fix` analyzers and `strings.CutLast`/`strings.Cut`/`strings.SplitSeq`; behaviour is unchanged.
+- Internal: `internal/zendure/cloud` gained tests (login signing, error paths, inbound routing; package coverage 6.5% to 45.6%). No production behaviour changed.
+
 # Version 0.8.0 (2026-09-14)
 
 ## What's Changed

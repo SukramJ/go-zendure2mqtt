@@ -55,8 +55,7 @@ func TestLoadDefaultsAndEnvOverride(t *testing.T) {
 
 func TestValidateRequiresMQTTServer(t *testing.T) {
 	_, err := config.Load(strings.NewReader("CONNECTION: local\n"), fakeEnv{})
-	var verr *config.ValidationError
-	if !errors.As(err, &verr) {
+	if _, ok := errors.AsType[*config.ValidationError](err); !ok {
 		t.Fatalf("expected *ValidationError, got %v", err)
 	}
 }

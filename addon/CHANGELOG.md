@@ -5,6 +5,14 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.9.0
+
+- Built with Go 1.27.1. Nothing changes for you: no option, topic, entity or
+  discovery payload moves, and no action is needed on upgrade.
+- Dependency update: the MQTT client library (go-mqtt v1.6.0), the Home
+  Assistant catalog (go-ha-catalog v0.3.0) and the discovery library
+  (go-hamqtt v0.35.0) move to their Go 1.27 releases.
+
 ## 0.8.0
 
 - **Breaking (discovery format): Home Assistant discovery is now one retained

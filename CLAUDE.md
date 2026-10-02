@@ -31,7 +31,7 @@ go run ./cmd/zendure2mqtt-util cloud-login --token <app-token>
 go run ./cmd/zendure2mqtt-util discover
 ```
 
-Go ≥ 1.26, `CGO_ENABLED=0`. Minimal deps (`golang.org/x/sync`, `yaml.v3`) — keep it that way.
+Go ≥ 1.27, `CGO_ENABLED=0`. Minimal deps (`golang.org/x/sync`, `yaml.v3`) — keep it that way.
 
 ## Architecture
 
