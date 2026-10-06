@@ -32,7 +32,7 @@ Daraus folgt ein gemeinsames Geräte-/Property-Modell plus ein
 
 **Zwei MQTT-Rollen** im Cloud-Modus:
 - **Ausgabe-Broker** (lokaler Mosquitto): publish normalisierter State +
-  HA-Discovery, subscribe HA-Befehle (`…/set`). Nutzt MQTT 5.0 (go-mqtt
+  HA-Discovery, subscribe `set`-Befehle (`<name>/set/…`). Nutzt MQTT 5.0 (go-mqtt
   v1.0.0 Default).
 - **Zendure-Cloud-Broker** (dynamisch aus dem Login, z. B.
   `mqtteu.zen-iot.com:8883`, TLS): subscribe Telemetrie, publish Steuerung.
@@ -52,7 +52,7 @@ internal/
   source                Source/Controller/Backend-Interfaces
   catalog               zendure.yaml: property → topic/group/platform/unit/scale/…
   process               Resolve: Skalierung, value_map, packData → Points; Topic-Helfer
-  coordinator           Report→publish ; /set→Write + sofortiges Re-Read ; HA-Discovery
+  coordinator           Report→publish ; set→Write + sofortiges Re-Read ; HA-Discovery
   hass                  HA Auto-Discovery (sensor/number/select/switch, Sub-Devices)
   discovery             dependency-freier mDNS-Browser (_zendure._tcp)
   state                 thread-safer Snapshot-Cache (nur bei aktivem Web-UI)
@@ -63,16 +63,35 @@ internal/
 
 ## 3. MQTT-Topic-Schema (Ausgabe)
 
+Seit 0.10.0 nach der Konvention mqtt-smarthome 2.0 (openccu-loom ADR 0083),
+`<name>/<funktion>/<item…>`; `<name>` = `MQTT_TOPIC`, Default `zendure`:
+
 ```
-zendure2mqtt/<sn>/now/<key>/state            Leistung, SoC, Status
-zendure2mqtt/<sn>/config/<key>/state         schreibbare Settings (Spiegel)
-zendure2mqtt/<sn>/static/<key>/state         rssi, Identität
-zendure2mqtt/<sn>/battery/<packSn>/<key>/state
-zendure2mqtt/<sn>/<group>/<key>/set          ← Befehlstopic
-zendure2mqtt/bridge/status                   online|offline (LWT, retained)
+zendure/status/<sn>/now/<key>                Leistung, SoC, Status
+zendure/status/<sn>/config/<key>             schreibbare Settings (Spiegel)
+zendure/status/<sn>/static/<key>             rssi, Identität
+zendure/status/<sn>/battery/<packSn>/<key>
+zendure/status/<sn>/misc/<property>          nicht katalogisiert (ohne HA-Entity)
+zendure/status/<sn>/online                   true|false, Gerät erreichbar
+zendure/set/<sn>/<group>/<key>               ← Befehlstopic (gleicher Item-Pfad, QoS 1)
+zendure/connected                            0|1|2 (LWT 0, retained)
+zendure/info                                 Instanz-Info (retained)
+zendure/maintenance/set/{loglevel,restart}   Wartung (abschaltbar)
+zendure/maintenance/stats                    Prozessstatistik (retained)
 homeassistant/device/zendure2mqtt_<sn>/config            retained Discovery (ein Dokument je Gerät)
 homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config   dito je Batteriepack
 ```
+
+Bis 0.9.x: `zendure2mqtt/<sn>/<group>/<key>/state` bzw. `…/set` und
+`zendure2mqtt/bridge/status` (`online`/`offline`). Jeder Status ist ein
+Objekt `{"val","ts","lc"}` (ms); Zahlen als JSON-Zahl in Anzeigeeinheit,
+Enums als Token (englischer `value_map`-Eintrag), Switches als JSON-Boolean.
+`connected` = 2 solange der Upstream nutzbar ist (lokal: mind. ein Gerät
+antwortet; Cloud: Cloud-Session steht), sonst 1. Die HA-Identitäten (unique_id,
+Identifier, node id) hängen an der **Identity-Root** — `MQTT_TOPIC` falls
+gesetzt, sonst `zendure2mqtt` —, nicht am neuen Default-Namen. Beim Start
+räumt ein Sweep die retained Topics des alten Layouts unter der alten Root
+(nur exakte alte Formen bekannter Seriennummern, nie per Präfix).
 
 ## 4. Property-/Steuerungs-Modell (SolarFlow 2400 AC)
 
@@ -86,7 +105,7 @@ homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config   dito je Batteriepa
   `smartMode`.
 - **Batterie-Packs:** `packData[]` → je Pack-SN eigene Sub-Entitäten
   (`socLevel`, `power`, `maxTemp`, `totalVol`, `maxVol`, `minVol`, `batcur`/A ÷10).
-- Nicht katalogisierte Properties werden roh unter `…/misc/<name>/state`
+- Nicht katalogisierte Properties werden roh unter `…/status/<sn>/misc/<name>`
   publiziert (kein HA-Entity) — so geht nichts verloren.
 
 Alles deklarativ in [`zendure.yaml`](../zendure.yaml).
@@ -97,9 +116,11 @@ Alles deklarativ in [`zendure.yaml`](../zendure.yaml).
   sprachneutral = `<platform>.<slug(Gerätename)>_<englischer Topic>`. Damit
   bleiben `entity_id`s stabil, während der Anzeige-`name` lokalisiert wird
   (deutsch bei `LANGUAGE: de`).
-- **`availability_topic`** = `<root>/bridge/status` (`online`/`offline`).
+- **Availability** (seit 0.10.0): Liste aus `<name>/connected` (verfügbar ab 2)
+  und `<name>/status/<sn>/online` (`true`), `availability_mode: all`; ein
+  Batteriepack folgt seiner Einheit. Bis 0.9.x: `<root>/bridge/status`.
 - **Batterie-Packs als Sub-Devices:** jedes Pack ist ein eigenes HA-Gerät
-  (`identifiers: <root>_<sn>_pack_<packSn>`), per `via_device` unter dem
+  (`identifiers: <identity-root>_<sn>_pack_<packSn>`), per `via_device` unter dem
   Hauptgerät verschachtelt; Haupt-Properties bleiben am Hauptgerät.
 - **Reiche Geräte-Registry:** Hauptgerät mit `serial_number`, `model_id`
   (= `product`, z. B. `solarFlow2400AC`) und `configuration_url` (lokale
@@ -112,9 +133,11 @@ Alles deklarativ in [`zendure.yaml`](../zendure.yaml).
   `DISCHARGE_ACTIVE_VALUE`. Sie laufen als synthetische Points durch denselben
   Publish-/Discovery-Pfad; nur der `/set`-Schreibweg ist im Coordinator
   sondergehandhabt.
-- **Select-i18n:** `value_map` (en) + `value_map_de` (de) → lokalisierte Optionen
-  **und** State; der `/set`-Rückweg mappt beide Sprachen auf den Rohcode
-  (`CodeForLabel`). Nur Labels werden lokalisiert, nie Topics/IDs/Codes.
+- **Select-i18n:** `value_map` (en) liefert die Tokens, die auf dem Draht
+  stehen; `value_map_de` (de) nur die Anzeige-Labels in der Discovery
+  (`options` + `value_template`/`command_template` mappen Token ↔ Label). Der
+  `set`-Rückweg nimmt den Token (Groß-/Kleinschreibung egal), beide Labels oder
+  den Rohcode. Nur Labels werden lokalisiert, nie Topics/IDs/Codes/Werte.
 - **HA-Caveat:** Home Assistant verschiebt bereits registrierte Entitäten nicht
   auf ein anderes Gerät und benennt `entity_id`s nicht um. Schema-Änderungen
   erfordern ein einmaliges Zurücksetzen: retained `homeassistant/.../config`

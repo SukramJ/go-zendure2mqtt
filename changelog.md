@@ -1,5 +1,99 @@
 # Unreleased
 
+# Version 0.10.0 (2026-10-06)
+
+## What's Changed
+
+### Breaking: the MQTT topics follow mqtt-smarthome 2.0
+
+All six projects of this family move to one topic convention,
+[mqtt-smarthome 2.0](https://github.com/mqtt-smarthome/mqtt-smarthome/blob/master/SPEC.md),
+in one wave (openccu-loom ADR 0083). This is a clean break: no switch
+publishes the old topics. **Home Assistant users have nothing to do**; anyone
+reading the raw topics (Node-RED, dashboards, Telegraf, scripts) must move.
+
+| Old | New |
+|---|---|
+| `zendure2mqtt/<sn>/<group>/<key>/state` | `zendure/status/<sn>/<group>/<key>` |
+| `zendure2mqtt/<sn>/battery/<packSn>/<key>/state` | `zendure/status/<sn>/battery/<packSn>/<key>` |
+| `zendure2mqtt/<sn>/<group>/<key>/set` | `zendure/set/<sn>/<group>/<key>` |
+| `zendure2mqtt/bridge/status` (`online`/`offline`) | `zendure/connected` (`0`/`1`/`2`) |
+| — | `zendure/status/<sn>/online`, `zendure/info`, `zendure/maintenance/…` |
+
+- **The default name is `zendure`** (was `zendure2mqtt`). A configured
+  `MQTT_TOPIC` is kept verbatim — so an installation that copied
+  `MQTT_TOPIC: zendure2mqtt` from the old template publishes under
+  `zendure2mqtt/status/…`. `MQTT_TOPIC` is the only thing that keeps two
+  instances on one broker apart; two instances need different names.
+- **Every status value is a status object**, `{"val": …, "ts": …, "lc": …}`
+  with millisecond timestamps. Numbers are JSON numbers in display units; the
+  AC and smart modes carry their stable English token (`charge`, `discharge`,
+  `persist`, `volatile`) instead of the label of the configured `LANGUAGE`;
+  the virtual switches are `true`/`false` instead of `1`/`0`. A value is
+  published when it changes and after every broker reconnect, no longer on
+  every poll.
+- **`<name>/connected`** replaces `bridge/status`: `0` from the Last Will and
+  on a graceful stop, `1` while the upstream is unusable, `2` while it works —
+  locally while at least one device answers its poll, in the cloud while the
+  cloud session is up. **`<name>/status/<sn>/online`** is new and says whether
+  that device answers.
+- **`set`** takes a plain value or `{"val": …}` on the status item's own path.
+  Enums take their token in any case, either label, or the raw code; the
+  switches take `true/false`, `1/0`, `on/off`, `yes/no` (anything else used
+  to mean "off" and is now rejected). Empty and retained messages are
+  ignored, the subscription is QoS 1 (was 0), and a rejected or failed
+  request is logged at `warn` with topic and payload.
+- **`<name>/info`** (retained, on every connect): `name` `go-zendure2mqtt`,
+  `version`, `spec`, `go`, `host`, `pid`, `started`, `maintenance`, `commit`,
+  `build_date`, `connection`.
+- **Maintenance topics**, on by default: `<name>/maintenance/set/loglevel`,
+  `<name>/maintenance/set/restart` (graceful stop with exit 0, only where a
+  supervisor restarts the daemon — `ZENDURE_SUPERVISED`, else detected) and
+  `<name>/maintenance/stats`. New keys `MQTT_MAINTENANCE` (default `true`) and
+  `MQTT_STATS_INTERVAL` (default `60`, `0` = off). **Anyone who may publish on
+  the broker can use them** — restrict the broker with ACLs or set
+  `MQTT_MAINTENANCE: false`.
+- `MQTT_TOPIC` containing `+` or `#` (or starting with `$`) is now refused at
+  start; such a name never worked.
+
+### Home Assistant
+
+- `unique_id`, device identifiers, node ids and the discovery topics are
+  **unchanged**: they stay on the identity root, which is `MQTT_TOPIC` when set
+  and `zendure2mqtt` when not — not the new default name. Entities re-point to
+  the new topics and keep their ids, names, areas, history and automations.
+  (Changing `MQTT_TOPIC` deliberately still re-keys every entity.)
+- Every entity is now available only while `<name>/connected` is `2` **and**
+  its unit's `online` is `true` (`availability_mode: all`): an unreachable
+  device no longer shows its last values as current.
+- The select options are still shown in the configured language; the state
+  carries the token and discovery maps it to the label and back.
+
+### Migration
+
+On every start the daemon clears what the old layout left retained under the
+old root (`MQTT_TOPIC` if set, else `zendure2mqtt`): `<old>/bridge/status`,
+and for each device serial it knows exactly `<old>/<sn>/<group>/<key>/state`,
+`<old>/<sn>/battery/<packSn>/<key>/state` and their `…/set`. Never by prefix,
+never another instance's devices, never a topic whose second level is a
+function name. Rolling back to 0.9.x needs no discovery step; the new layout's
+retained topics then stay until cleared.
+
+### Add-on
+
+- `mqtt_topic` may be empty and is empty for new installs (= `zendure`);
+  existing installs keep their saved value. New options `mqtt_maintenance` and
+  `mqtt_stats_interval`. The maintenance restart is refused in the add-on.
+
+### Internal
+
+- go-hamqtt v0.36.0: `topic.SmartHome`, the status-object encoding,
+  `CommandRouter.HandleSet`, `Runtime.SetConnected`, `publisher.Instance`.
+- The `set` path moved from a raw subscription to go-hamqtt's
+  `CommandRouter`; writes run on its workers. The post-write re-read stays.
+- The backends report upstream and per-device reachability through a new
+  `source.Observer`.
+
 # Version 0.9.0 (2026-10-02)
 
 ## What's Changed

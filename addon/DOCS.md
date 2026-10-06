@@ -31,7 +31,9 @@ For a standard Home Assistant install with the Mosquitto broker:
 | `mqtt_port` | int | `1883` | MQTT broker port. Only used when `mqtt_server` is set. |
 | `mqtt_login` | str | `""` | MQTT username. Only used when `mqtt_server` is set. |
 | `mqtt_password` | password | `""` | MQTT password. Only used when `mqtt_server` is set. |
-| `mqtt_topic` | str | `zendure2mqtt` | Base MQTT topic for published device state. |
+| `mqtt_topic` | str | *(empty)* | The instance name, the first level of every topic. Empty means `zendure`. **It is the only thing that keeps two instances apart**: two bridges on one broker need different names. Changing it later re-keys every Home Assistant entity. Installs from before 0.10.0 keep their saved `zendure2mqtt`. |
+| `mqtt_maintenance` | bool | `true` | Enable the maintenance topics (`<name>/maintenance/…`: log level, stats). See the security note below. |
+| `mqtt_stats_interval` | int | `60` | Seconds between `<name>/maintenance/stats` publishes; `0` switches them off. |
 | `hass_enable` | bool | `true` | Publish Home Assistant MQTT discovery so entities appear automatically. |
 | `language` | list(en\|de) | `en` | Display-name language (topics/entity_ids stay language-independent). |
 | `web_enable` | bool | `true` | Enable the read-only diagnostic web UI (served via Ingress). |
@@ -41,14 +43,54 @@ For a standard Home Assistant install with the Mosquitto broker:
 
 ## Topics
 
-State is published under `<mqtt_topic>/<sn>/<group>/<key>/state`, battery packs
-under `<mqtt_topic>/<sn>/battery/<packSn>/<key>/state`, and writable entities
-listen on `…/set`. Home Assistant discovery uses the device-based format: one
+Since 0.10.0 the topics follow the mqtt-smarthome 2.0 convention,
+`<name>/<function>/<item…>`, where `<name>` is `mqtt_topic` (`zendure` when
+empty):
+
+| Before 0.10.0 | Since 0.10.0 |
+|---|---|
+| `zendure2mqtt/<sn>/<group>/<key>/state` | `<name>/status/<sn>/<group>/<key>` |
+| `zendure2mqtt/<sn>/battery/<packSn>/<key>/state` | `<name>/status/<sn>/battery/<packSn>/<key>` |
+| `zendure2mqtt/<sn>/<group>/<key>/set` | `<name>/set/<sn>/<group>/<key>` |
+| `zendure2mqtt/bridge/status` (`online`/`offline`) | `<name>/connected` (`0` stopped, `1` no device reachable, `2` operational) |
+| — | `<name>/status/<sn>/online` (`true`/`false`), `<name>/info` |
+
+Every status value is a JSON object, `{"val": 50.39, "ts": …, "lc": …}`:
+numbers as numbers, the switches as `true`/`false`, and the AC and smart modes
+as their English token (`charge`, `volatile`, …) whatever `language` says —
+Home Assistant shows the German label itself. `set` takes a plain value or
+`{"val": …}`; empty and retained messages are ignored.
+
+**Home Assistant needs nothing from you**: the discovery documents point every
+entity at the new topics and the entities keep their ids, names, areas and
+history. An entity is available while `<name>/connected` is `2` and its
+device's `online` item is `true`. Automations or dashboards that read the raw
+MQTT topics must move to the new ones. On start the add-on clears the old
+layout's retained topics under the old root (`mqtt_topic` if set, otherwise
+`zendure2mqtt`), only for the devices it knows and only in their exact old
+shape.
+
+### Maintenance topics
+
+`<name>/maintenance/set/loglevel` (`error`/`warn`/`info`/`debug`) changes the
+log level until the next start, and `<name>/maintenance/stats` carries process
+statistics. `<name>/maintenance/set/restart` is refused in the add-on — the
+Supervisor does not restart an add-on that exits cleanly; restart it from Home
+Assistant instead.
+
+> **Security:** anyone who may publish on your broker can change the log
+> level. Use the broker's ACLs to keep other clients off
+> `<name>/maintenance/#`, or switch `mqtt_maintenance` off.
+
+### Discovery
+
+Home Assistant discovery uses the device-based format: one
 retained document per device under `<hass_base>/device/<node_id>/config`, where
 `<hass_base>` is the discovery prefix (`homeassistant` for the add-on, which
 does not expose it as an option) and the node id is the device identifier
-(`<mqtt_topic>_<sn>`, and `<mqtt_topic>_<sn>_pack_<packSn>` for each battery
-pack) — the serial in its original case.
+(`zendure2mqtt_<sn>`, and `zendure2mqtt_<sn>_pack_<packSn>` for each battery
+pack, or your `mqtt_topic` in place of `zendure2mqtt` if you set one) — the
+serial in its original case.
 
 Earlier releases published one retained config per entity under
 `<hass_base>/<platform>/<unique_id>/config`. The first start after

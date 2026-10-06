@@ -5,6 +5,29 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.10.0
+
+- **Breaking (MQTT topics): the topics follow the mqtt-smarthome 2.0
+  convention.** `zendure2mqtt/<sn>/<group>/<key>/state` becomes
+  `<name>/status/<sn>/<group>/<key>`, `…/set` becomes `<name>/set/…` on the
+  same path, and `zendure2mqtt/bridge/status` becomes `<name>/connected`
+  (`0`/`1`/`2`). Every value is a JSON object `{"val", "ts", "lc"}`; the AC
+  and smart modes carry their English token instead of the localised label,
+  the switches `true`/`false` instead of `1`/`0`. See DOCS.md for the table.
+- **Home Assistant: nothing to do.** Entities move to the new topics by
+  themselves and keep their ids, names, areas and history. They now also go
+  unavailable when their device stops answering, not only when the add-on
+  stops.
+- **Raw-topic users** (Node-RED, dashboards, scripts) must move to the new
+  topics. The old retained topics are cleared on start.
+- **Option changes:** `mqtt_topic` may now be empty and is empty for new
+  installs (meaning `zendure`); an existing install keeps its saved
+  `zendure2mqtt`, so its topics read `zendure2mqtt/status/…`. New options
+  `mqtt_maintenance` (default on) and `mqtt_stats_interval` (default 60 s)
+  for the new maintenance topics; the restart command is refused in the
+  add-on.
+- `set` commands are now subscribed at QoS 1 and retained ones are ignored.
+
 ## 0.9.0
 
 - Built with Go 1.27.1. Nothing changes for you: no option, topic, entity or
