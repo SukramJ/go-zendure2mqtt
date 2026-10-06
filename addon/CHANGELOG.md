@@ -5,6 +5,24 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.10.1
+
+Fixes for 0.10.0; updating needs no other action.
+
+- **Cloud mode:** after the cloud connection dropped, devices stayed
+  unavailable until they reported again. They are available again as soon
+  as the connection is back.
+- **Local mode:** a single missed poll no longer makes a device (or, with
+  one device, every entity) unavailable; it takes two in a row.
+- **AC mode / smart mode:** a value the add-on does not know now shows as
+  *unknown* instead of the last option — or *persist* for the smart mode —
+  and is logged once so it can be added.
+- **Cleared values** show as *unknown* instead of keeping their old state
+  with a template error in the Home Assistant log.
+- **Broker restarts without persistence:** the discovery documents are sent
+  again on every reconnect, so the entities survive Home Assistant's next
+  restart.
+
 ## 0.10.0
 
 - **Breaking (MQTT topics): the topics follow the mqtt-smarthome 2.0

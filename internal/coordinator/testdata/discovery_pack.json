@@ -39,7 +39,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/current",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current",
       "unit_of_measurement": "A",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage": {
@@ -82,7 +82,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/max_cell_voltage",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage",
       "unit_of_measurement": "V",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp": {
@@ -125,7 +125,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/max_temp",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp",
       "unit_of_measurement": "°C",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage": {
@@ -168,7 +168,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/min_cell_voltage",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage",
       "unit_of_measurement": "V",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power": {
@@ -211,7 +211,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level": {
@@ -254,7 +254,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/soc_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage": {
@@ -297,7 +297,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/total_voltage",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage",
       "unit_of_measurement": "V",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   }
 }

@@ -1,5 +1,61 @@
 # Unreleased
 
+# Version 0.10.1 (2026-10-06)
+
+Fixes for 0.10.0. Updating needs no other action: Home Assistant picks up
+the corrected discovery documents by itself, and no entity id, name or
+history changes.
+
+## Fixed
+
+- **Cloud mode: after a dropped cloud session, devices stayed unavailable
+  until they happened to report again.** 0.10.0 set every device's
+  `<name>/status/<sn>/online` to `false` when the session dropped and only
+  that device's next report set it back, so a quiet device stayed
+  unavailable in Home Assistant although the session was back and
+  `<name>/connected` was `2`. A drop now shows on `<name>/connected` (`1`)
+  only, and every device is set `online` again the moment the session is
+  restored. The cloud reports no per-device online state, so in cloud mode
+  `online` means "listed by the cloud".
+- **Local mode: one missed poll made a device unavailable.** A single slow
+  or lost answer set its `online` to `false` — and on a single-device install
+  also `<name>/connected` to `1`, so every entity went unavailable for one
+  poll. A device is now unreachable at its second failed poll in a row and
+  reachable again at its next answer.
+- **The AC mode or smart mode could show a wrong or stale option.** A code
+  the catalog does not know was published as a raw number that Home
+  Assistant rejected as an invalid option, so the select kept showing its
+  last valid option; a value that was no number at all was read as code 0
+  and shown as *persist* for the smart mode. Such a value now keeps its raw
+  value on the wire (`{"val": 7}`), never becomes a token it is not, shows as
+  *unknown* in Home Assistant, and is logged once per device, property and
+  value (`coordinator.unmapped_value`) so the catalog can be extended. The
+  same rule applies to any sensor with a value map.
+- **A value that became empty kept showing its old state**, with a template
+  error in Home Assistant's log for each clear. Sensors, numbers and selects
+  now show a cleared item as *unknown*.
+- **After a broker restart without persistence the discovery documents were
+  not sent again** (only on Home Assistant's birth message, which this
+  bridge can miss when both reconnect), so Home Assistant's next restart
+  found no entities. Every broker (re)connect now republishes them — the
+  per-entity configs of 0.7.x and earlier are still cleared first — and
+  publishes each device's current `online` instead of replaying a value that
+  went stale while the broker was away.
+
+## On the wire
+
+- Discovery: the `value_template` of every sensor, number and select (no
+  identity, topic or other key changes); switches and availability are
+  unchanged.
+- `<name>/status/<sn>/config/smart_mode` (and any value-mapped item) carries
+  the raw value instead of the token of code 0 when the device reports a
+  value that is no code.
+- `<name>/status/<sn>/online`: no longer `false` on a cloud session drop;
+  locally `false` one poll later than before.
+- On every broker reconnect: each device document, preceded by the
+  retractions of the per-entity configs of 0.7.x and earlier (empty retained
+  payloads, as on start), and each device's current `online` item.
+
 # Version 0.10.0 (2026-10-06)
 
 ## What's Changed

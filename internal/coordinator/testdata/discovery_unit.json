@@ -41,7 +41,7 @@
       "platform": "select",
       "state_topic": "zendure/status/SF2400AC0012345/config/ac_mode",
       "unique_id": "zendure2mqtt_SF2400AC0012345_ac_mode",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% set m = {'charge': 'charge', 'discharge': 'discharge'} %}{% if value_json is defined and value_json.val is string %}{{ m.get(value_json.val, 'None') }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_battery_voltage": {
@@ -84,7 +84,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/battery_voltage",
       "unique_id": "zendure2mqtt_SF2400AC0012345_battery_voltage",
       "unit_of_measurement": "V",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_charge_active": {
@@ -170,7 +170,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/static/charge_max_limit",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_max_limit",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_discharge_active": {
@@ -256,7 +256,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_grid_input_power": {
@@ -299,7 +299,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/grid_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_grid_input_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_grid_off_power": {
@@ -342,7 +342,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/grid_off_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_grid_off_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_input_limit": {
@@ -387,7 +387,7 @@
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_input_limit",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_inverse_max_power": {
@@ -432,7 +432,7 @@
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_inverse_max_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_min_soc": {
@@ -477,7 +477,7 @@
       "step": 1,
       "unique_id": "zendure2mqtt_SF2400AC0012345_min_soc",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_home_power": {
@@ -520,7 +520,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/output_home_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_home_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_limit": {
@@ -565,7 +565,7 @@
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_limit",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_pack_power": {
@@ -608,7 +608,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/output_pack_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_pack_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_count": {
@@ -648,7 +648,7 @@
       "platform": "sensor",
       "state_topic": "zendure/status/SF2400AC0012345/static/pack_count",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_input_power": {
@@ -691,7 +691,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/pack_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_input_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_remain_out_time": {
@@ -734,7 +734,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/remain_out_time",
       "unique_id": "zendure2mqtt_SF2400AC0012345_remain_out_time",
       "unit_of_measurement": "min",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_rssi": {
@@ -777,7 +777,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/static/rssi",
       "unique_id": "zendure2mqtt_SF2400AC0012345_rssi",
       "unit_of_measurement": "dBm",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_smart_mode": {
@@ -822,7 +822,7 @@
       "platform": "select",
       "state_topic": "zendure/status/SF2400AC0012345/config/smart_mode",
       "unique_id": "zendure2mqtt_SF2400AC0012345_smart_mode",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% set m = {'persist': 'persist', 'volatile': 'volatile'} %}{% if value_json is defined and value_json.val is string %}{{ m.get(value_json.val, 'None') }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_soc_set": {
@@ -867,7 +867,7 @@
       "step": 1,
       "unique_id": "zendure2mqtt_SF2400AC0012345_soc_set",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_solar_input_power": {
@@ -910,7 +910,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/solar_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_solar_input_power",
       "unit_of_measurement": "W",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_temperature": {
@@ -953,7 +953,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/temperature",
       "unique_id": "zendure2mqtt_SF2400AC0012345_temperature",
       "unit_of_measurement": "°C",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   }
 }

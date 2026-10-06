@@ -8,6 +8,7 @@
 package process
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -44,6 +45,11 @@ type Point struct {
 	Value any
 	// Entry is the catalog entry, or nil for unmapped raw values.
 	Entry *catalog.Entry
+	// Unmapped is set when Entry has a value map and the raw value is not one
+	// of its codes — an unknown code, or a value that is no integer code at
+	// all. Value then carries the raw value unchanged (never a token it is
+	// not), and the entity's discovery template renders it as unknown.
+	Unmapped bool
 }
 
 // Resolve flattens rep into points using cat. An enum code is emitted as its
@@ -57,11 +63,13 @@ func Resolve(rep *model.Report, cat *catalog.Catalog) []Point {
 	for key, raw := range rep.Properties {
 		if entry, ok := cat.ByProperty(key); ok {
 			e := entry
+			value, unmapped := applyEntry(e, raw)
 			points = append(points, Point{
-				Group: groupOrDefault(e.Group, GroupMisc),
-				Topic: e.TopicLeaf(),
-				Value: applyEntry(e, raw),
-				Entry: &e,
+				Group:    groupOrDefault(e.Group, GroupMisc),
+				Topic:    e.TopicLeaf(),
+				Value:    value,
+				Entry:    &e,
+				Unmapped: unmapped,
 			})
 			continue
 		}
@@ -79,20 +87,22 @@ func Resolve(rep *model.Report, cat *catalog.Catalog) []Point {
 				continue
 			}
 			value := raw
+			unmapped := false
 			var entryPtr *catalog.Entry
 			topic := sanitizeSegment(key)
 			if entry, ok := cat.ByProperty(key); ok {
 				e := entry
-				value = applyEntry(e, raw)
+				value, unmapped = applyEntry(e, raw)
 				entryPtr = &e
 				topic = e.TopicLeaf()
 			}
 			points = append(points, Point{
-				Group:  GroupBattery,
-				Topic:  topic,
-				PackSN: packSN,
-				Value:  value,
-				Entry:  entryPtr,
+				Group:    GroupBattery,
+				Topic:    topic,
+				PackSN:   packSN,
+				Value:    value,
+				Entry:    entryPtr,
+				Unmapped: unmapped,
 			})
 		}
 	}
@@ -153,13 +163,27 @@ func groupOrDefault(g, fallback string) string {
 	return g
 }
 
-// applyEntry applies offset/scale and value-map translation to a raw value.
-// A code the value map does not know keeps its number, as it always has.
-func applyEntry(e catalog.Entry, raw any) any {
+// applyEntry applies offset/scale and value-map translation to a raw value,
+// and reports whether a value-mapped entry got a value its map does not know.
+//
+// A value-mapped entry yields its token only for an integer code the map
+// carries. Anything else — an unknown code, a fractional number, a string
+// that is no integer — keeps its raw value and is reported unmapped, so it is
+// never published as a member of an option set it is not: before 0.10.1 a
+// non-numeric value was coerced to code 0, which smartMode reads as
+// "persist". No value at all (nil or "") is passed through and is not
+// unmapped; the coordinator clears the item.
+func applyEntry(e catalog.Entry, raw any) (any, bool) {
 	if len(e.ValueMap) > 0 {
-		if token, ok := e.Token(strconv.Itoa(toInt(raw))); ok {
-			return token
+		if raw == nil || raw == "" {
+			return raw, false // no value: the item is cleared, not mapped
 		}
+		if code, ok := codeOf(raw); ok {
+			if token, ok := e.Token(code); ok {
+				return token, false
+			}
+		}
+		return raw, true
 	}
 	if e.Scale != 0 || e.Offset != 0 {
 		if f, ok := toFloat(raw); ok {
@@ -169,10 +193,10 @@ func applyEntry(e catalog.Entry, raw any) any {
 			if e.Scale != 0 {
 				f /= e.Scale
 			}
-			return f
+			return f, false
 		}
 	}
-	return raw
+	return raw, false
 }
 
 // toFloat coerces a JSON-decoded numeric value to float64.
@@ -189,12 +213,21 @@ func toFloat(v any) (float64, bool) {
 	}
 }
 
-// toInt coerces a JSON-decoded numeric value to int (for value-map keys).
-func toInt(v any) int {
-	if f, ok := toFloat(v); ok {
-		return int(f)
+// codeOf renders a raw value as a value-map key: an integral number, or a
+// string holding a decimal integer. Anything else has no code.
+func codeOf(v any) (string, bool) {
+	if s, ok := v.(string); ok {
+		i, err := strconv.Atoi(strings.TrimSpace(s))
+		if err != nil {
+			return "", false
+		}
+		return strconv.Itoa(i), true
 	}
-	return 0
+	f, ok := toFloat(v)
+	if !ok || f != math.Trunc(f) || math.IsInf(f, 0) || f > math.MaxInt32 || f < math.MinInt32 {
+		return "", false
+	}
+	return strconv.Itoa(int(f)), true
 }
 
 // Owners lists the distinct Home Assistant device owners in a point slice —

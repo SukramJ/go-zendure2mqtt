@@ -141,9 +141,12 @@ broker reconnect, not on every poll.
 **`<name>/connected`** is retained: `0` from the Last Will and on a graceful
 stop, `1` while the bridge is on the broker but its upstream is unusable, `2`
 while it is operational. In local mode the upstream is usable while at least
-one device answered its latest poll; in cloud mode while the cloud MQTT
-session is up. **`<name>/status/<sn>/online`** says whether that one device
-answered (local) or reported since the cloud session came up (cloud).
+one device is reachable; in cloud mode while the cloud MQTT session is up.
+**`<name>/status/<sn>/online`** says whether that one device is reachable:
+locally, whether it answers its HTTP API — it goes `false` at the second
+failed poll in a row, not the first, and `true` again at the next answer; in
+cloud mode every device the cloud lists is `true` and is re-published as soon
+as a dropped session is back (the drop itself shows on `<name>/connected`).
 
 **`set`** takes a plain value or `{"val": …}` on the item's own path. Numbers
 are clamped to the entity's range and converted to the device's raw units;

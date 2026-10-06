@@ -130,10 +130,61 @@ func TestResolvePublishesTokensNotLabels(t *testing.T) {
 		t.Errorf("Options(de) = %v, want [Laden Entladen]", got)
 	}
 
-	// A code the value map does not know keeps its number, as before.
+	// A code the value map does not know keeps its number, as before, and
+	// is flagged so discovery renders it unknown and the coordinator warns.
 	rep.Properties["acMode"] = float64(9)
-	if p, _ := find(process.Resolve(rep, cat), "config", "ac_mode"); p.Value != float64(9) {
-		t.Errorf("unmapped code = %v, want the raw 9", p.Value)
+	if p, _ := find(process.Resolve(rep, cat), "config", "ac_mode"); p.Value != float64(9) || !p.Unmapped {
+		t.Errorf("unmapped code = %v (unmapped %v), want the raw 9, flagged", p.Value, p.Unmapped)
+	}
+}
+
+// TestResolveNeverMintsATokenFromANonCode pins the 0.10.1 fix: a value that
+// is no integer code of the map is published raw and flagged, never coerced to
+// a token. 0.10.0 read every non-number as code 0 — "persist" for smartMode —
+// and a fractional number as its truncation.
+func TestResolveNeverMintsATokenFromANonCode(t *testing.T) {
+	const yaml = `
+entries:
+  - property: smartMode
+    topic: smart_mode
+    platform: select
+    writable: true
+    value_map:
+      "0": persist
+      "1": volatile
+`
+	cat, err := catalog.Load(strings.NewReader(yaml))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		raw      any
+		want     any
+		unmapped bool
+	}{
+		{float64(0), "persist", false},
+		{float64(1), "volatile", false},
+		{"1", "volatile", false},
+		{" 0 ", "persist", false},
+		{"abc", "abc", true},
+		{"", "", false},
+		{float64(0.5), float64(0.5), true},
+		{float64(1.9), float64(1.9), true},
+		{float64(7), float64(7), true},
+		{true, true, true},
+		{nil, nil, false},
+	} {
+		rep := &model.Report{SN: "SF1", Properties: map[string]any{"smartMode": c.raw}}
+		p, ok := find(process.Resolve(rep, cat), "", "smart_mode")
+		if !ok {
+			p, ok = find(process.Resolve(rep, cat), process.GroupMisc, "smart_mode")
+		}
+		if !ok {
+			t.Fatalf("%v: smart_mode point missing", c.raw)
+		}
+		if p.Value != c.want || p.Unmapped != c.unmapped {
+			t.Errorf("raw %#v -> %#v (unmapped %v), want %#v (unmapped %v)", c.raw, p.Value, p.Unmapped, c.want, c.unmapped)
+		}
 	}
 }
 

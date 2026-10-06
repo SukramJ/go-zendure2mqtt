@@ -185,7 +185,7 @@ func TestEntitiesReadTheStatusObject(t *testing.T) {
 	}
 
 	sensor := render("en", level)
-	if sensor.ValueTemplate != discovery.StatusValueTemplate {
+	if sensor.ValueTemplate != harender.ValueTemplate {
 		t.Errorf("sensor value_template = %q", sensor.ValueTemplate)
 	}
 	if sensor.AvailabilityMode != "all" || len(sensor.Availability) != 2 {
@@ -203,9 +203,12 @@ func TestEntitiesReadTheStatusObject(t *testing.T) {
 		t.Errorf("the flat availability_topic survived: %q", sensor.AvailabilityTopic)
 	}
 
+	// Since 0.10.1 an English select maps its tokens too, so a code outside
+	// the map renders None (unknown) instead of an option Home Assistant
+	// rejects; the command side needs no template (token == label).
 	sel := render("en", acMode)
-	if sel.ValueTemplate != discovery.StatusValueTemplate || sel.CommandTemplate != "" {
-		t.Errorf("English select templates = %q / %q, want the plain val read (token == label)", sel.ValueTemplate, sel.CommandTemplate)
+	if sel.ValueTemplate != harender.EnumValueTemplate(harender.Enum(acMode), "en") || sel.CommandTemplate != "" {
+		t.Errorf("English select templates = %q / %q, want the guarded token map and no command template", sel.ValueTemplate, sel.CommandTemplate)
 	}
 	if strings.Join(sel.Options, ",") != "charge,discharge" {
 		t.Errorf("English options = %v", sel.Options)
@@ -222,6 +225,17 @@ func TestEntitiesReadTheStatusObject(t *testing.T) {
 	fields, _ := swc.Fields.(discovery.SwitchFields)
 	if swc.ValueTemplate != discovery.StatusBoolValueTemplate || fields.PayloadOn != "true" || fields.PayloadOff != "false" {
 		t.Errorf("switch = template %q, fields %+v", swc.ValueTemplate, swc.Fields)
+	}
+
+	// A value-mapped sensor is an enum sensor with the select's guarded map.
+	mode := catalog.Entry{
+		Property: "workMode", Topic: "work_mode", Group: "now", Platform: "sensor",
+		ValueMap: map[string]string{"0": "idle", "1": "busy"}, ValueMapDE: map[string]string{"0": "frei", "1": "belegt"},
+	}
+	enumDE := render("de", mode)
+	if enumDE.DeviceClass != "enum" || strings.Join(enumDE.Options, ",") != "frei,belegt" ||
+		enumDE.ValueTemplate != harender.EnumValueTemplate(harender.Enum(mode), "de") || enumDE.StateClass != "" {
+		t.Errorf("enum sensor = class %q options %v state_class %q template %q", enumDE.DeviceClass, enumDE.Options, enumDE.StateClass, enumDE.ValueTemplate)
 	}
 }
 
