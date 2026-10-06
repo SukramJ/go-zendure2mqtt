@@ -4,6 +4,7 @@
 package coordinator
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -96,7 +97,7 @@ func TestDeviceDocumentsAreRepublishedAfterABrokerLostItsStore(t *testing.T) {
 		t.Fatalf("after a reconnect to a broker that lost its store it holds %d documents, want 2", len(after))
 	}
 	for topic, payload := range before {
-		if string(after[topic]) != string(payload) {
+		if !bytes.Equal(after[topic], payload) {
 			t.Errorf("%s: the republished document differs from the one first written", topic)
 		}
 	}
