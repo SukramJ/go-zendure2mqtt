@@ -16,7 +16,6 @@ import (
 	hamodel "github.com/SukramJ/go-hamqtt/model"
 	"github.com/SukramJ/go-hamqtt/publisher"
 
-	"github.com/SukramJ/go-zendure2mqtt/internal/config"
 	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
@@ -38,7 +37,7 @@ const discoveryPrefix = "homeassistant"
 // not in what was resolved.
 func resolvePoints(t *testing.T, dev source.Device, report *model.Report) []process.Point {
 	t.Helper()
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	pub := &capturingClient{}
 	// The two planes are wired even though this helper publishes nothing:
 	// New refuses a Deps without them, because a runtime not built from
@@ -52,7 +51,7 @@ func resolvePoints(t *testing.T, dev source.Device, report *model.Report) []proc
 		HARuntime:  newHARuntime(pub, cfg.MQTTTopic),
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
 	})
-	points := process.Resolve(report, c.deps.Catalog, cfg.Language)
+	points := process.Resolve(report, c.deps.Catalog)
 	return append(points, c.switchPoints(report)...)
 }
 
@@ -75,7 +74,7 @@ func resolvePoints(t *testing.T, dev source.Device, report *model.Report) []proc
 func renderLibrary(t *testing.T, dev source.Device, report *model.Report) map[string]goldenEntry {
 	t.Helper()
 
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	ctx := r.Context()
 
 	out := map[string]goldenEntry{}
@@ -180,6 +179,41 @@ func mustCanonical(body map[string]any) string {
 	return string(raw)
 }
 
+// identityKeys are the payload keys Home Assistant keys an entity, its
+// entity id and its device on — the ones openccu-loom ADR 0083 requires to
+// survive the 0.10.0 topic move unchanged, against ADR 0068's measurement
+// that Home Assistant has no migration for any of them.
+var identityKeys = []string{"unique_id", "default_entity_id"}
+
+// identityKeysOfDevice are the device-block keys of the same kind.
+var identityKeysOfDevice = []string{"identifiers", "via_device"}
+
+// identityProjection reduces every row to its address and its identity
+// strings. The rest of the payload — topics, templates, availability — moved
+// in 0.10.0 by design; what is left is what must not have moved.
+func identityProjection(m map[string]goldenEntry) map[string]goldenEntry {
+	out := make(map[string]goldenEntry, len(m))
+	for k, e := range m {
+		body := map[string]any{}
+		for _, key := range identityKeys {
+			if v, ok := e.Payload[key]; ok {
+				body[key] = v
+			}
+		}
+		if dev, ok := e.Payload["device"].(map[string]any); ok {
+			d := map[string]any{}
+			for _, key := range identityKeysOfDevice {
+				if v, ok := dev[key]; ok {
+					d[key] = v
+				}
+			}
+			body["device"] = d
+		}
+		out[k] = goldenEntry{Topic: e.Topic, Payload: body}
+	}
+	return out
+}
+
 // legacyPins loads the frozen per-entity pin — the 29 retained configs every
 // release before ADR 0070 phase 5 step 5 published, captured from the
 // production code before one byte moved — split into the unit's rows and the
@@ -188,10 +222,11 @@ func mustCanonical(body map[string]any) string {
 // The tests below compare the library's per-entity rendering against *that*
 // pin rather than against the current one, and they must: the current pin is
 // the device-document form this bridge publishes now, and what these tests
-// prove is the migration's premise — that the shared model reproduces what
-// the installed base is running on, byte for byte, 29 of 29. That question
-// does not change when the topic does, and the answer is what makes the move
-// a re-addressing rather than a rewrite.
+// prove is the migration's premise — that every entity is still addressed by
+// the identity the installed base registered it under. Since 0.10.0 they
+// compare the [identityProjection] only: the topics, templates and
+// availability of every payload moved with openccu-loom ADR 0083, the
+// identities did not.
 func legacyPins(t *testing.T) (unit, pack map[string]goldenEntry) {
 	t.Helper()
 	var all map[string]goldenEntry
@@ -210,33 +245,19 @@ func legacyAll(t *testing.T) map[string]goldenEntry {
 	return unit
 }
 
-// TestLibraryRenderReproducesThePinnedPayloads is the decisive experiment of
-// ADR 0070 phase 5: the shared go-hamqtt model, rendering this bridge's 29
-// entities, produces the exact payloads and the exact retained topics PR #39
-// pinned from the production code.
+// TestLibraryRenderReproducesThePinnedPayloads was the decisive experiment
+// of ADR 0070 phase 5: the shared go-hamqtt model, rendering this bridge's 29
+// entities, produced the exact payloads and the exact retained topics PR #39
+// pinned from the production code. 0.10.0 moved every topic in those payloads
+// on purpose (openccu-loom ADR 0083), so what is asserted against the frozen
+// pin now is the part that must not have moved: the retained per-entity
+// config topic (keyed on the unique_id, and what PublishBundle retracts),
+// the unique_id, the default_entity_id, and the device identifiers and
+// via_device — 29 of 29.
 //
-// Everything the whole migration rests on is in that sentence, and until this
-// test ran it was derived from reading the library rather than from running
-// it. The measurement (§3.1) listed every key and its source and could still
-// only write "cannot name the exact byte sequence, because no consumer exists
-// yet" against the rendered payload. If the bytes match, every later step is
-// a switch-over with a pin behind it. If they do not, the difference is a
-// finding about either this bridge or the library, and this — a branch with
-// nothing on a broker — is the cheapest place in the programme for it to
-// surface. The alternative place is a user's Home Assistant, where a changed
-// unique_id is an entity that silently loses its history and a changed
-// state_topic is one that silently goes unknown forever.
-//
-// Nothing here publishes. There is no broker, no runtime, no Publisher and no
-// transport: the capturing client exists only so resolvePoints can construct
-// a Coordinator, and it is never handed a discovery payload. The pins are
-// read, never written — this test has no -update flag and must never acquire
-// one, because a pin that the thing under test can rewrite is not a pin.
-//
-// The comparison is on the canonical re-encoding of both decoded payloads,
-// which is exact for every key, every value and every type; only key order
-// and whitespace, which no MQTT consumer sees and which json.Marshal
-// normalises away on both sides, are out of scope.
+// The pins are read, never written — this test has no -update flag and must
+// never acquire one, because a pin that the thing under test can rewrite is
+// not a pin.
 func TestLibraryRenderReproducesThePinnedPayloads(t *testing.T) {
 	rendered := renderLibrary(t, goldenUnit(), goldenReport())
 	unit, pack := splitByPack(rendered)
@@ -251,7 +272,7 @@ func TestLibraryRenderReproducesThePinnedPayloads(t *testing.T) {
 		{"unit", wantUnit, unit},
 		{"pack", wantPack, pack},
 	} {
-		for _, line := range diffAgainstPin(tc.want, tc.got) {
+		for _, line := range diffAgainstPin(identityProjection(tc.want), identityProjection(tc.got)) {
 			t.Errorf("%s: %s", tc.name, line)
 		}
 	}
@@ -309,7 +330,7 @@ func TestLibraryRenderReproducesTheIdentityHazards(t *testing.T) {
 		}
 	}
 
-	for _, line := range diffAgainstPin(want, got) {
+	for _, line := range diffAgainstPin(identityProjection(want), identityProjection(got)) {
 		t.Errorf("%s", line)
 	}
 	if len(got) != len(want) {
@@ -319,8 +340,8 @@ func TestLibraryRenderReproducesTheIdentityHazards(t *testing.T) {
 
 // TestLibraryRenderReproducesTheStateTopics proves the other half of the wire
 // through the library's own topic layer: every state topic the bridge
-// publishes comes back identical from harender.Layout, which delegates to
-// process.StateTopic.
+// publishes comes back identical from harender.Layout.State, the formula the
+// discovery payloads are rendered with.
 //
 // The state plane is the half Home Assistant's registry does not protect. A
 // changed unique_id orphans an entity visibly — it disappears and a new one
@@ -337,7 +358,7 @@ func TestLibraryRenderReproducesTheStateTopics(t *testing.T) {
 	var want []string
 	readGoldenJSON(t, goldenStateTopicPath, &want)
 
-	layout := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}.Layout()
+	layout := testRenderer("en").Layout()
 	dev := goldenUnit()
 
 	got := make([]string, 0, len(want))
@@ -361,7 +382,7 @@ func TestLibraryRenderReproducesTheStateTopics(t *testing.T) {
 // generalised: an entity that accepts input in Home Assistant and silently
 // does nothing.
 func TestLibraryRenderReproducesTheCommandTopics(t *testing.T) {
-	layout := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}.Layout()
+	layout := testRenderer("en").Layout()
 	dev := goldenUnit()
 
 	writable := 0
@@ -370,9 +391,14 @@ func TestLibraryRenderReproducesTheCommandTopics(t *testing.T) {
 			continue
 		}
 		writable++
-		want := process.CommandTopic("zendure2mqtt", dev.SN, p)
-		if got := layout.Command(harender.Slot(dev.SN, p)); got != want {
-			t.Errorf("%s: command topic\n library %s\n bridge  %s", p.Topic, got, want)
+		// Spec §3: the item path under set is the one under status.
+		slot := harender.Slot(dev.SN, p)
+		want := strings.Replace(layout.State(slot), testName+"/status/", testName+"/set/", 1)
+		if got := layout.Command(slot); got != want {
+			t.Errorf("%s: command topic\n library %s\n want    %s", p.Topic, got, want)
+		}
+		if !mqttMatch(CommandFilter(testName), want) {
+			t.Errorf("%s: command topic %s is outside the subscribed filter %s", p.Topic, want, CommandFilter(testName))
 		}
 	}
 	// 5 numbers + 2 selects + 2 virtual switches.
@@ -420,7 +446,7 @@ func TestLibraryRenderReproducesTheCommandTopics(t *testing.T) {
 func TestLegacyTopicFormIsKeyedOnUniqueID(t *testing.T) {
 	pinned := legacyAll(t)
 
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	ctx := r.Context()
 	dev := goldenUnit()
 	report := goldenReport()
@@ -545,7 +571,7 @@ func platformOfTopic(t *testing.T, topic string) hacatalog.Platform {
 //
 // Still nothing publishes. Validate reads a *Bundle in memory.
 func TestRenderedBundleValidates(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	ctx := r.Context()
 	dev := goldenUnit()
 	report := goldenReport()
@@ -640,7 +666,7 @@ func TestSupersededTopicsRetractsThePinnedConfigs(t *testing.T) {
 	}
 	sort.Strings(wantTopics)
 
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	ctx := r.Context()
 	dev := goldenUnit()
 	report := goldenReport()
@@ -677,7 +703,7 @@ func TestSupersededTopicsRetractsThePinnedConfigs(t *testing.T) {
 }
 
 // TestLibraryRenderDiffCatchesMutations verifies that the comparison the
-// three equality tests above rest on can actually fail.
+// equality tests above rest on can actually fail.
 //
 // It exists because an adversarial review in this programme found five
 // library tests that could not: they asserted over an empty set, or compared
@@ -688,37 +714,50 @@ func TestSupersededTopicsRetractsThePinnedConfigs(t *testing.T) {
 // like a match.
 //
 // So each row below perturbs the library's real output in one specific way,
-// and the comparison must report it. The perturbations are not arbitrary:
-// each is a way this migration could actually go wrong, and the two identity
-// rows are the two the library's own defaults would have produced if
-// internal/harender had not overridden them.
+// and the full comparison must report it. The rows marked identity must also
+// survive the [identityProjection] the frozen-pin tests compare through —
+// that projection is what proves 0.10.0 kept every identity, and a projection
+// that dropped a key would make that proof vacuous for it.
 func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
-	want, _ := legacyPins(t)
+	legacy, _ := legacyPins(t)
 	base := func() map[string]goldenEntry {
 		unit, _ := splitByPack(renderLibrary(t, goldenUnit(), goldenReport()))
 		return unit
 	}
+	want := base()
 
-	// The unperturbed comparison must be clean, or every row below proves
+	// The unperturbed comparisons must be clean, or every row below proves
 	// nothing: a diff that is already non-empty would "catch" any mutation.
 	if diff := diffAgainstPin(want, base()); len(diff) != 0 {
-		t.Fatalf("the unperturbed comparison is not clean, so no mutation below proves anything:\n%s",
-			strings.Join(diff, "\n"))
+		t.Fatalf("two renders differ, so no mutation below proves anything:\n%s", strings.Join(diff, "\n"))
+	}
+	if diff := diffAgainstPin(identityProjection(legacy), identityProjection(base())); len(diff) != 0 {
+		t.Fatalf("the identity comparison is not clean:\n%s", strings.Join(diff, "\n"))
 	}
 
-	const probe = "zendure2mqtt_SF2400AC0012345_electric_level"
+	const probe = testIdentity + "_SF2400AC0012345_electric_level"
 
 	for _, tc := range []struct {
-		name   string
-		mutate func(map[string]goldenEntry)
+		name     string
+		identity bool
+		mutate   func(map[string]goldenEntry)
 	}{{
 		// What StdContext.UniqueID would have produced: the serial
 		// case-folded by the slug. Home Assistant has no unique-id migration
 		// path, so this single change is 29 entities losing their history.
-		name: "case-folded unique_id",
+		name: "case-folded unique_id", identity: true,
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
 			e.Payload["unique_id"] = strings.ToLower(e.Payload["unique_id"].(string))
+			m[probe] = e
+		},
+	}, {
+		// The 0.10.0 hazard itself: the identity built from the new default
+		// topic name instead of the pinned identity root.
+		name: "unique_id from the new topic name", identity: true,
+		mutate: func(m map[string]goldenEntry) {
+			e := m[probe]
+			e.Payload["unique_id"] = strings.Replace(e.Payload["unique_id"].(string), testIdentity+"_", testName+"_", 1)
 			m[probe] = e
 		},
 	}, {
@@ -726,7 +765,7 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 		// token taken from the topic root rather than from the device name.
 		// Inert for installed entities, decisive for every new install —
 		// which is exactly why it would ship green.
-		name: "entity-id seed from the root instead of the device name",
+		name: "entity-id seed from the root instead of the device name", identity: true,
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
 			e.Payload["default_entity_id"] = strings.Replace(
@@ -734,21 +773,18 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 			m[probe] = e
 		},
 	}, {
-		// The availability form: the flat triple replaced by the list the
-		// library's StdContext renders by default. Home Assistant accepts
-		// both, so nothing would complain.
-		name: "availability list instead of the flat triple",
+		// The device's own availability entry dropped: an unreachable unit
+		// would keep showing its last values.
+		name: "availability reduced to the bridge entry",
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
-			delete(e.Payload, "availability_topic")
-			delete(e.Payload, "payload_available")
-			delete(e.Payload, "payload_not_available")
-			e.Payload["availability"] = []any{map[string]any{"topic": "zendure2mqtt/bridge/status"}}
+			avail, _ := e.Payload["availability"].([]any)
+			e.Payload["availability"] = avail[:1]
 			m[probe] = e
 		},
 	}, {
-		// A value_template, which EnvelopeEncoding would add to all 29
-		// payloads while the state plane still publishes a bare scalar.
+		// The envelope template, which reads value_json.value from a status
+		// object that carries val.
 		name: "value_template from the envelope encoding",
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
@@ -756,13 +792,12 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 			m[probe] = e
 		},
 	}, {
-		// topic.Default's shape instead of this bridge's: the bucket segment
-		// appears and the group moves. The entity stays exactly where it is
-		// and goes unknown forever.
-		name: "state topic from topic.Default",
+		// topic.SmartHome's slot-order item path instead of this bridge's:
+		// the entity stays exactly where it is and goes unknown forever.
+		name: "state topic in another item order",
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
-			e.Payload["state_topic"] = "zendure2mqtt/SF2400AC0012345/values/electric_level"
+			e.Payload["state_topic"] = testName + "/status/SF2400AC0012345/electric_level/now"
 			m[probe] = e
 		},
 	}, {
@@ -779,7 +814,7 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 		// A namespaced device identifier, which leaves the existing device
 		// behind with its area and its name override while the entities move
 		// to a new one.
-		name: "namespaced device identifier",
+		name: "namespaced device identifier", identity: true,
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
 			dev, _ := e.Payload["device"].(map[string]any)
@@ -790,7 +825,7 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 		// The five-segment legacy topic form: same payload, different
 		// address. The old config stays retained and Home Assistant orphans
 		// the entity under it.
-		name: "five-segment config topic",
+		name: "five-segment config topic", identity: true,
 		mutate: func(m map[string]goldenEntry) {
 			e := m[probe]
 			e.Topic = "homeassistant/sensor/zendure2mqtt_SF2400AC0012345/electric_level/config"
@@ -807,11 +842,11 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 		},
 	}, {
 		// An entity that stops being rendered at all.
-		name:   "missing entity",
+		name: "missing entity", identity: true,
 		mutate: func(m map[string]goldenEntry) { delete(m, probe) },
 	}, {
 		// An entity the pin does not have.
-		name: "extra entity",
+		name: "extra entity", identity: true,
 		mutate: func(m map[string]goldenEntry) {
 			m["zendure2mqtt_SF2400AC0012345_invented"] = goldenEntry{
 				Topic:   "homeassistant/sensor/zendure2mqtt_SF2400AC0012345_invented/config",
@@ -824,6 +859,12 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 			tc.mutate(got)
 			if diff := diffAgainstPin(want, got); len(diff) == 0 {
 				t.Errorf("the comparison did not notice %q — it cannot fail, and neither can the tests that use it", tc.name)
+			}
+			if !tc.identity {
+				return
+			}
+			if diff := diffAgainstPin(identityProjection(legacy), identityProjection(got)); len(diff) == 0 {
+				t.Errorf("the identity projection did not notice %q — the frozen-pin proof is vacuous for it", tc.name)
 			}
 		})
 	}
@@ -846,11 +887,11 @@ func TestLibraryRenderDiffCatchesMutations(t *testing.T) {
 func TestExportedIdentityHelpersAreTheProductionOnes(t *testing.T) {
 	dev := goldenUnit()
 
-	if got, want := hass.UniqueID("zendure2mqtt", dev.SN, "", "electric_level"),
+	if got, want := hass.UniqueID(testIdentity, dev.SN, "", "electric_level"),
 		"zendure2mqtt_SF2400AC0012345_electric_level"; got != want {
 		t.Errorf("UniqueID = %q, want %q", got, want)
 	}
-	if got, want := hass.UniqueID("zendure2mqtt", dev.SN, "AO4H2301X01", "current"),
+	if got, want := hass.UniqueID(testIdentity, dev.SN, "AO4H2301X01", "current"),
 		"zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current"; got != want {
 		t.Errorf("UniqueID (pack) = %q, want %q", got, want)
 	}
@@ -899,7 +940,7 @@ func TestExportedIdentityHelpersAreTheProductionOnes(t *testing.T) {
 // topic.Default — for which Bucket is not inert — needs to find out here
 // rather than from a fleet of relocated state topics.
 func TestSlotBucketIsInertForThisBridge(t *testing.T) {
-	layout := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}.Layout()
+	layout := testRenderer("en").Layout()
 	dev := goldenUnit()
 
 	for _, p := range resolvePoints(t, dev, goldenReport()) {

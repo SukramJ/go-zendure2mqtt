@@ -37,17 +37,21 @@ type Point struct {
 	Topic string
 	// PackSN, when set, scopes the point to a battery pack sub-device.
 	PackSN string
-	// Value is the processed value (scaled / mapped) to publish.
+	// Value is the processed value to publish: a float64 scaled to display
+	// units, an enum's stable token (the English value_map entry, never a
+	// localised label), a bool for the virtual switches, or the raw JSON
+	// value for an unmapped property.
 	Value any
 	// Entry is the catalog entry, or nil for unmapped raw values.
 	Entry *catalog.Entry
 }
 
-// Resolve flattens rep into points using cat. Select labels are emitted in
-// lang ("de" → German option labels, matching HA discovery). Properties
-// without a catalog entry are still published (group "misc", raw value) so
-// nothing is lost while the catalog is filled in.
-func Resolve(rep *model.Report, cat *catalog.Catalog, lang string) []Point {
+// Resolve flattens rep into points using cat. An enum code is emitted as its
+// token ([catalog.Entry.Token]) whatever LANGUAGE says — the label is Home
+// Assistant's business, mapped in discovery (openccu-loom ADR 0083).
+// Properties without a catalog entry are still published (group "misc", raw
+// value) so nothing is lost while the catalog is filled in.
+func Resolve(rep *model.Report, cat *catalog.Catalog) []Point {
 	points := make([]Point, 0, len(rep.Properties))
 
 	for key, raw := range rep.Properties {
@@ -56,7 +60,7 @@ func Resolve(rep *model.Report, cat *catalog.Catalog, lang string) []Point {
 			points = append(points, Point{
 				Group: groupOrDefault(e.Group, GroupMisc),
 				Topic: e.TopicLeaf(),
-				Value: applyEntry(e, raw, lang),
+				Value: applyEntry(e, raw),
 				Entry: &e,
 			})
 			continue
@@ -79,7 +83,7 @@ func Resolve(rep *model.Report, cat *catalog.Catalog, lang string) []Point {
 			topic := sanitizeSegment(key)
 			if entry, ok := cat.ByProperty(key); ok {
 				e := entry
-				value = applyEntry(e, raw, lang)
+				value = applyEntry(e, raw)
 				entryPtr = &e
 				topic = e.TopicLeaf()
 			}
@@ -150,10 +154,11 @@ func groupOrDefault(g, fallback string) string {
 }
 
 // applyEntry applies offset/scale and value-map translation to a raw value.
-func applyEntry(e catalog.Entry, raw any, lang string) any {
+// A code the value map does not know keeps its number, as it always has.
+func applyEntry(e catalog.Entry, raw any) any {
 	if len(e.ValueMap) > 0 {
-		if label, ok := e.Label(strconv.Itoa(toInt(raw)), lang); ok {
-			return label
+		if token, ok := e.Token(strconv.Itoa(toInt(raw))); ok {
+			return token
 		}
 	}
 	if e.Scale != 0 || e.Offset != 0 {

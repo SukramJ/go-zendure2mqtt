@@ -5,6 +5,7 @@ package coordinator
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -12,8 +13,6 @@ import (
 	"github.com/SukramJ/go-hamqtt/publisher"
 	"github.com/SukramJ/go-mqtt"
 
-	"github.com/SukramJ/go-zendure2mqtt/internal/config"
-	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )
@@ -33,7 +32,7 @@ type statePlaneRig struct {
 func newStatePlaneRig(t *testing.T) *statePlaneRig {
 	t.Helper()
 	pub := &capturingClient{}
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	dev := goldenUnit()
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
@@ -41,8 +40,8 @@ func newStatePlaneRig(t *testing.T) *statePlaneRig {
 		Backend: &goldenBackend{devices: []source.Device{dev}},
 		MQTT:    pub,
 		Catalog: goldenCatalog(t),
-		HASS: hass.New("homeassistant", cfg.MQTTTopic,
-			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic, cfg.IdentityRoot(),
+			testRenderer(cfg.Language), rt, discardLogger()),
 		Logger:     discardLogger(),
 		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
@@ -103,18 +102,17 @@ func TestEveryPublishIsAtMostOnce(t *testing.T) {
 	}
 }
 
-// TestStatePlaneSuppressesUnchangedValues is the migration's measurable win.
+// TestStatePlaneSuppressesUnchangedValues is spec §3.2's "MUST NOT
+// republish unchanged state in a tight loop", measured.
 //
-// Before this step, coordinator.publish re-published every resolved point
-// retained on every poll — 30 writes per device every 15 s by default,
-// roughly 7 000 an hour, nearly all byte-identical to what the broker already
-// held. The dedup gate inside publisher.StatePublisher turns the unchanged
-// ones into nothing.
+// The poll re-reports every value every 15 s by default. The status object
+// carries `ts`, so a byte comparison would see a change on every poll;
+// publisher.StatePublisher.PublishStatus compares `val` only and turns the
+// unchanged ones into nothing.
 //
 // Mutation check: reverting Coordinator.publishState to a direct
 // deps.MQTT.Publish makes the second poll write 30 again and this test fails
-// on the second assertion. Narrowing the gate to a length comparison instead
-// of bytes.Equal fails TestStatePlaneWritesAChangedValue below.
+// on the second assertion.
 func TestStatePlaneSuppressesUnchangedValues(t *testing.T) {
 	rig := newStatePlaneRig(t)
 	ctx := context.Background()
@@ -134,10 +132,8 @@ func TestStatePlaneSuppressesUnchangedValues(t *testing.T) {
 // TestStatePlaneWritesAChangedValue is the other half: the gate must not
 // swallow a real change.
 //
-// One property moves and exactly one topic is written. A gate comparing
-// anything coarser than the payload bytes — a length, a digest of the point
-// list, the "already sent" set shape internal/hass uses for configs — passes
-// the suppression test above and fails here.
+// One property moves and exactly one topic is written, as a status object
+// whose `val` is the JSON number and whose `lc` moved with it.
 func TestStatePlaneWritesAChangedValue(t *testing.T) {
 	rig := newStatePlaneRig(t)
 	ctx := context.Background()
@@ -156,67 +152,85 @@ func TestStatePlaneWritesAChangedValue(t *testing.T) {
 			written = append(written, rec.Topic)
 		}
 	}
-	want := []string{"zendure2mqtt/SF2400AC0012345/now/electric_level/state"}
+	want := []string{testName + "/status/SF2400AC0012345/now/electric_level"}
 	if len(written) != 1 || written[0] != want[0] {
 		t.Errorf("changed poll wrote %v, want %v", written, want)
 	}
 	for _, rec := range wire {
-		if rec.Topic == want[0] && string(rec.Payload) != "56" {
-			t.Errorf("payload = %q, want \"56\"", rec.Payload)
+		if rec.Topic != want[0] {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(rec.Payload, &obj); err != nil {
+			t.Fatalf("payload %q: %v", rec.Payload, err)
+		}
+		if obj["val"] != float64(56) || obj["ts"] == nil || obj["lc"] != obj["ts"] {
+			t.Errorf("payload = %s, want val 56 with lc == ts (the value changed now)", rec.Payload)
 		}
 	}
 }
 
-// TestReconnectReopensTheDedupGate pins the one case the gate must not win.
+// TestReconnectRepublishesTheStatusItems pins spec §3.2's other rule: status
+// is published again after every broker reconnect, so the retained state is
+// complete even on a broker that came back without its store — and it is the
+// cached object, `ts` and all, because the replay is the same observation
+// re-delivered, not a new one.
 //
-// A broker restarted without persistence drops every retained state while
-// this process reconnects underneath. The cache would then answer "already
-// published" for values the broker no longer holds and every entity would sit
-// blank until its datapoint next changed — which on packNum or
-// chargeMaxLimit is never. PublishOnline, which is wired to the lifecycle's
-// OnConnect, resets the gate so the next poll writes the fleet once.
-//
-// Mutation check: deleting the StatePlane.Reset() call from PublishOnline
-// leaves the post-reconnect poll at 0 writes and fails the last assertion.
-func TestReconnectReopensTheDedupGate(t *testing.T) {
+// Mutation check: deleting the StatePlane.Republish call from PublishOnline
+// leaves the reconnect at 0 writes and fails the count.
+func TestReconnectRepublishesTheStatusItems(t *testing.T) {
 	rig := newStatePlaneRig(t)
 	ctx := context.Background()
 
 	rig.coord.publish(ctx, rig.dev, goldenReport())
-	rig.stateWrites()
-	rig.coord.publish(ctx, rig.dev, goldenReport())
-	if n := rig.stateWrites(); n != 0 {
-		t.Fatalf("steady state wrote %d, want 0", n)
+	before := map[string]string{}
+	for _, rec := range rig.pub.wire() {
+		if !strings.HasPrefix(rec.Topic, "homeassistant/") {
+			before[rec.Topic] = string(rec.Payload)
+		}
 	}
+	rig.stateWrites()
 
 	rig.coord.PublishOnline(ctx)
-	rig.stateWrites() // the bridge status announcement is not a state topic
+	replayed := 0
+	for _, rec := range rig.pub.wire() {
+		if strings.HasPrefix(rec.Topic, "homeassistant/") || rec.Topic == testName+"/connected" {
+			continue
+		}
+		replayed++
+		if before[rec.Topic] != string(rec.Payload) {
+			t.Errorf("%s replayed as %s, want the cached %s", rec.Topic, rec.Payload, before[rec.Topic])
+		}
+	}
+	if replayed != 30 {
+		t.Errorf("reconnect replayed %d status items, want 30", replayed)
+	}
+	rig.stateWrites()
 
+	// And the gate stays closed for the next poll.
 	rig.coord.publish(ctx, rig.dev, goldenReport())
-	if n := rig.stateWrites(); n != 30 {
-		t.Errorf("post-reconnect poll wrote %d state topics, want 30 — a broker that lost its retained store would leave every entity blank", n)
+	if n := rig.stateWrites(); n != 0 {
+		t.Errorf("post-reconnect poll wrote %d, want 0", n)
 	}
 }
 
-// TestEmptyStateValueStillRetracts pins the accident this bridge has always
-// had, preserved deliberately.
+// TestEmptyStateValueStillRetracts pins the behaviour this bridge has always
+// had for an empty value, preserved deliberately.
 //
-// formatValue renders an empty string value as zero bytes, and publishing
-// zero bytes retained is MQTT's retraction rather than a state — so such a
-// point has always deleted the broker's retained value instead of writing
-// one. publisher.StatePublisher.Publish refuses that with
-// ErrEmptyStatePayload precisely because it is usually an accident, which
-// would have turned a silent retraction into a warning log and no write at
-// all. Routing it to Evict keeps the three wire values identical (empty
-// payload, retained, QoS 0) and says it on purpose.
+// Every release before 0.10.0 rendered an empty string value as zero bytes,
+// and publishing zero bytes retained is MQTT's retraction rather than a state
+// — so such a point has always deleted the broker's retained value instead of
+// writing one. Under the status object an empty value would otherwise become
+// `{"val":""}`; routing it to Evict keeps the three wire values identical
+// (empty payload, retained, QoS 0) and says it on purpose.
 //
 // Mutation check: dropping the empty-payload branch from publishState makes
 // this test see no publish at all.
 func TestEmptyStateValueStillRetracts(t *testing.T) {
 	rig := newStatePlaneRig(t)
-	topic := "zendure2mqtt/SF2400AC0012345/config/ac_mode/state"
+	topic := testName + "/status/SF2400AC0012345/config/ac_mode"
 
-	if !rig.coord.publishState(context.Background(), topic, formatValue("")) {
+	if !rig.coord.publishState(context.Background(), topic, "") {
 		t.Fatal("publishState reported no write for an empty value")
 	}
 	wire := rig.pub.wire()
@@ -232,7 +246,7 @@ func TestEmptyStateValueStillRetracts(t *testing.T) {
 // TestStatePlaneRefusesAStateWriteIntoItsOwnCommandFilter pins the guard this
 // bridge had no equivalent of.
 //
-// A state topic that fell inside `<root>/+/+/+/set` would be echoed straight
+// A state topic that fell inside `<name>/set/+/+/+` would be echoed straight
 // back into Coordinator.handleSet — the process commanding itself, with
 // nothing in any log saying so. The library refuses it with
 // ErrStateCommandCollision, and the filter it checks against is
@@ -243,7 +257,7 @@ func TestEmptyStateValueStillRetracts(t *testing.T) {
 func TestStatePlaneRefusesAStateWriteIntoItsOwnCommandFilter(t *testing.T) {
 	rig := newStatePlaneRig(t)
 
-	if rig.coord.publishState(context.Background(), "zendure2mqtt/SF1/config/inputLimit/set", []byte("1200")) {
+	if rig.coord.publishState(context.Background(), testName+"/set/SF1/config/input_limit", float64(1200)) {
 		t.Error("publishState reported a write into this process's own command filter")
 	}
 	if wire := rig.pub.wire(); len(wire) != 0 {
@@ -265,7 +279,7 @@ func TestPinnedStateTopicsClearTheCommandGuard(t *testing.T) {
 	if len(pinned) == 0 {
 		t.Fatal("state-topic pin is empty")
 	}
-	filter := CommandFilter("zendure2mqtt")
+	filter := CommandFilter(testName)
 	for _, topic := range pinned {
 		if publisher.MatchFilter(filter, topic) {
 			t.Errorf("state topic %s matches this bridge's own command filter %s", topic, filter)
@@ -278,41 +292,44 @@ func TestPinnedStateTopicsClearTheCommandGuard(t *testing.T) {
 	}
 }
 
-// TestFormatValueIsStillTheRenderer records why the state plane is handed
-// bytes rather than values.
-//
-// publisher.StatePublisher.PublishValue would render the payload itself
-// through publisher.RenderRawValue, which is the better function — it
-// round-trips floats instead of truncating them — but it renders a Go bool as
-// "true"/"false" and an int through strconv, where formatValue publishes
-// "1"/"0" for a bool. Handing the library the bytes keeps the payload a
-// decision of this repository, which is what the step is for; swapping the
-// renderer is a payload change and belongs with the ones that move bytes.
-//
-// Mutation check: switching publishState to PublishValue makes the bool row
-// below disagree.
-func TestFormatValueIsStillTheRenderer(t *testing.T) {
-	cases := []struct {
-		value any
-		want  string
-	}{
-		{float64(55), "55"},
-		{float64(50.39), "50.39"},
-		{"charge", "charge"},
-		{true, "1"},
-		{false, "0"},
-	}
-	for _, tc := range cases {
-		if got := string(formatValue(tc.value)); got != tc.want {
-			t.Errorf("formatValue(%v) = %q, want %q", tc.value, got, tc.want)
+// TestStatusValuesAreTyped pins openccu-loom ADR 0083's payload rule on the
+// shipped catalog: a number is a JSON number in display units, an enum its
+// token (never the localised label, even under LANGUAGE: de), a switch a JSON
+// boolean — all inside the status object's `val`.
+func TestStatusValuesAreTyped(t *testing.T) {
+	captured := capturePublish(t, goldenUnit(), goldenReport())
+	val := func(item string) any {
+		t.Helper()
+		raw, ok := captured[testName+"/status/SF2400AC0012345/"+item]
+		if !ok {
+			t.Fatalf("%s not published", item)
 		}
+		var obj map[string]any
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			t.Fatalf("%s: %v", item, err)
+		}
+		for _, key := range []string{"ts", "lc"} {
+			if _, ok := obj[key].(float64); !ok {
+				t.Errorf("%s: %s missing or not an integer: %s", item, key, raw)
+			}
+		}
+		return obj["val"]
 	}
-	raw, err := publisher.RenderRawValue(true)
-	if err != nil {
-		t.Fatalf("RenderRawValue: %v", err)
-	}
-	if string(raw) == "1" {
-		t.Error("publisher.RenderRawValue now renders a bool as \"1\"; the divergence this test records is gone and publishState could use PublishValue")
+	for _, c := range []struct {
+		item string
+		want any
+	}{
+		{"now/electric_level", float64(55)},
+		{"now/battery_voltage", 50.39},
+		{"config/ac_mode", "charge"},
+		{"config/smart_mode", "volatile"},
+		{"config/charge_active", true},
+		{"config/discharge_active", false},
+		{"battery/AO4H2301X01/soc_level", float64(57)},
+	} {
+		if got := val(c.item); got != c.want {
+			t.Errorf("%s val = %#v, want %#v", c.item, got, c.want)
+		}
 	}
 }
 

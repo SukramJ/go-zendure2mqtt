@@ -3,8 +3,12 @@
 
 // Package coordinator is the transport-neutral core: it consumes readings
 // from a [source.Backend], resolves them through the catalog, publishes
-// state (and Home Assistant discovery) to MQTT, and routes inbound /set
-// commands back to the backend as writes.
+// status items (and Home Assistant discovery) to MQTT, and routes inbound
+// `set` commands back to the backend as writes.
+//
+// The topics follow mqtt-smarthome 2.0 (openccu-loom ADR 0083):
+// `<name>/status/<sn>/…` and `<name>/set/<sn>/…`, `<name>/connected` and
+// `<name>/status/<sn>/online`, laid out by [harender.Layout].
 package coordinator
 
 import (
@@ -21,10 +25,12 @@ import (
 
 	"github.com/SukramJ/go-hamqtt/discovery"
 	"github.com/SukramJ/go-hamqtt/publisher"
+	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
@@ -54,23 +60,23 @@ type Deps struct {
 	// of CONNECT.
 	HARuntime *publisher.Runtime
 
-	// StatePlane writes every point's retained state value. Required.
+	// StatePlane writes every status item. Required.
 	//
 	// It is built at the composition root (cmd/zendure2mqtt) rather than
-	// here, because the one thing it has to be told is the quality of
-	// service and that is a statement about an installed base rather than
-	// about this package. The wiring states [publisher.QoSAtMostOnce] —
-	// QoS 0 — because that is what every release of this bridge has
-	// published at; the library's own default is QoS 1 and the zero value
-	// of its config would take it silently.
+	// here, because what it has to be told — the quality of service and the
+	// status-object encoding — is stated once, in [HAStateConfig], and the
+	// composition root and the fixtures both build from that.
 	StatePlane *publisher.StatePublisher
 }
 
 // Coordinator wires a backend to the MQTT broker.
 type Coordinator struct {
-	deps   Deps
-	root   string
-	logger *slog.Logger
+	deps     Deps
+	topics   harender.Layout
+	identity string // config.Config.IdentityRoot: unique_ids, and the old layout's root
+	logger   *slog.Logger
+	tr       publisher.Transport
+	commands *publisher.CommandRouter
 
 	runCtx   context.Context //nolint:containedctx // captured for the subscription handler
 	switches []virtual.Switch
@@ -120,18 +126,49 @@ func New(deps Deps) *Coordinator {
 	if deps.StatePlane == nil {
 		panic("coordinator: Deps.StatePlane is required; build it at the composition root so the state QoS is stated there")
 	}
-	return &Coordinator{
+	tr := hagomqtt.Transport(deps.MQTT)
+	c := &Coordinator{
 		deps:        deps,
-		root:        deps.Cfg.MQTTTopic,
+		topics:      Layout(deps.Cfg.MQTTTopic),
+		identity:    deps.Cfg.IdentityRoot(),
 		logger:      logger,
+		tr:          tr,
 		bySN:        bySN,
 		switches:    virtual.Switches(deps.Cfg.ChargeActiveW(), deps.Cfg.DischargeActiveW()),
 		lastDiscSig: map[string]string{},
 	}
+	// QoS 1 — the library's default, stated by leaving it unset — and
+	// retained commands dropped, as ADR 0083 asks of all six projects.
+	// Every release before 0.10.0 subscribed at QoS 0 with a raw Subscribe
+	// that ran a retained /set on every reconnect.
+	c.commands = publisher.NewCommandRouter(tr, publisher.CommandConfig{Logger: logger})
+	if err := c.commands.HandleSet(c.topics.CommandFilter(), c.handleSet); err != nil {
+		panic("coordinator: register the set route: " + err.Error())
+	}
+	if o, ok := deps.Backend.(source.Observable); ok {
+		o.Observe(c)
+	}
+	return c
 }
 
+// Layout is the topic layout for an instance name that [config.Validate]
+// has accepted. It panics on any other, which is a composition-root mistake
+// rather than operator input: the name was refused at load.
+func Layout(name string) harender.Layout {
+	l, err := harender.NewLayout(name)
+	if err != nil {
+		panic("coordinator: MQTT_TOPIC passed validation but is not a topic name: " + err.Error())
+	}
+	return l
+}
+
+// Commands is the command router every `set` item and the maintenance
+// topics are routed through. The composition root registers the
+// maintenance routes on it before [Coordinator.Run] starts it.
+func (c *Coordinator) Commands() *publisher.CommandRouter { return c.commands }
+
 // CommandFilter is the MQTT filter this bridge subscribes for inbound
-// commands, `<root>/+/+/+/set`.
+// commands, `<name>/set/+/+/+` — [harender.Layout.CommandFilter].
 //
 // Exported because the composition root needs the same string for
 // [publisher.StateConfig.CommandFilters], which refuses a state publish that
@@ -140,25 +177,12 @@ func New(deps Deps) *Coordinator {
 // library's own guard exists because consumers wrote the filter twice and the
 // copies drifted.
 //
-// Note what it does not cover, unchanged: a five-level pack command topic
-// (`<root>/<sn>/battery/<packSN>/<leaf>/set`) matches neither this filter nor
-// handleSet's five-part check, so a writable pack property would publish an
-// unroutable command_topic — F3 of the ADR 0070 phase-5 measurement, latent
-// because 0 of the 7 pack properties is writable, and deliberately left
-// as-is here.
-func CommandFilter(root string) string { return root + "/+/+/+/set" }
-
-// BridgeStatusTopic is this daemon's own availability topic,
-// `<root>/bridge/status`: the topic its Last Will clears, the topic
-// PublishOnline and PublishOffline write, and the topic every published
-// entity names as its availability_topic.
-//
-// Exported because those four readers used to be four string literals, and
-// the library refuses a Config.StatusTopic that disagrees with its Layout's
-// Bridge() precisely because a typo there greys out an entire fleet with
-// nothing on the wire naming the cause. One formula, checked against
-// harender.Layout.Bridge in TestBridgeStatusTopicIsOneString.
-func BridgeStatusTopic(root string) string { return root + "/bridge/status" }
+// Note what it does not cover, unchanged: a six-level pack set item
+// (`<name>/set/<sn>/battery/<packSN>/<leaf>`) does not match it, so a
+// writable pack property would publish an unroutable command_topic — F3 of
+// the ADR 0070 phase-5 measurement, latent because 0 of the 7 pack properties
+// is writable, and deliberately left as-is here.
+func CommandFilter(name string) string { return Layout(name).CommandFilter() }
 
 // HARuntimeConfig is the [publisher.Config] this daemon's Home Assistant
 // plane runs on, in ONE place.
@@ -188,12 +212,18 @@ func BridgeStatusTopic(root string) string { return root + "/bridge/status" }
 // library's zero value means "unset" and resolves to QoS 1, and every release
 // of this bridge has published its discovery plane at QoS 0.
 //
+// The layout is this bridge's mqtt-smarthome one, which makes the runtime's
+// status topic `<name>/connected`: its Last Will writes 0, AnnounceOnline the
+// current level (1 until [Coordinator.UpstreamUsable] says 2), and every
+// entity's availability list names the same string, because both are
+// rendered from [harender.Layout.Bridge].
+//
 // The logger is a parameter because the daemon and the fixtures want
 // different ones; everything else is derived from the operator's config.
 func HARuntimeConfig(cfg *config.Config, logger *slog.Logger) publisher.Config {
 	return publisher.Config{
 		Prefix:             cfg.HASSBaseTopic,
-		StatusTopic:        BridgeStatusTopic(cfg.MQTTTopic),
+		Layout:             Layout(cfg.MQTTTopic),
 		QoS:                publisher.QoSAtMostOnce,
 		LegacyEntityTopics: []publisher.LegacyTopicFunc{publisher.LegacyTopicByUniqueID},
 		Logger:             logger,
@@ -211,7 +241,7 @@ func HARuntimeConfig(cfg *config.Config, logger *slog.Logger) publisher.Config {
 // composition root. That the form it resolves to is the one this fleet's 29
 // retained configs are actually on is asserted separately, against the pins.
 func wantLegacyForms() []string {
-	probe := publisher.New(nopTransport{}, HARuntimeConfig(&config.Config{}, slog.New(slog.DiscardHandler)))
+	probe := publisher.New(nopTransport{}, HARuntimeConfig(&config.Config{MQTTTopic: config.TopicRoot}, slog.New(slog.DiscardHandler)))
 	defer probe.Close()
 	return probe.LegacyForms()
 }
@@ -233,16 +263,10 @@ func (nopTransport) Unsubscribe(context.Context, string) error { return nil }
 // Both QoS fields are stated, and the second one is why this function exists
 // rather than a literal at each site.
 //
-//   - QoS is [publisher.QoSAtMostOnce] — QoS 0 — because that is what every
-//     release of this bridge has published its whole state plane at, and the
-//     library's zero value means "unset" and resolves to QoS 1. Adopting the
-//     runtime without saying so would have changed the delivery guarantee of
-//     an installed base inside a migration step whose purpose is
-//     de-duplication. That is an inherited choice being preserved, not an
-//     endorsement: a state value lost at QoS 0 is lost, and the broker then
-//     keeps serving the previous retained value until the datapoint next
-//     changes — which for a crash is never. Changing it is its own release
-//     with its own changelog line.
+//   - QoS is [publisher.QoSAtMostOnce] — QoS 0 — which is what every release
+//     of this bridge has published its whole state plane at and what
+//     mqtt-smarthome 2.0 §4 asks status items to use. The library's zero
+//     value means "unset" and resolves to QoS 1 under the raw encoding.
 //   - PulseQoS is the one field in the package whose *default* is QoS 0
 //     rather than QoS 1, so leaving it unset happens to resolve to the same
 //     wire byte today. That coincidence is exactly why stating it is worth
@@ -253,35 +277,47 @@ func (nopTransport) Unsubscribe(context.Context, string) error { return nil }
 //     operator's log — and this is that warning answered rather than
 //     silenced.
 //
+// The encoding is mqtt-smarthome 2.0's status object, `{"val","ts","lc"}`
+// with integer-millisecond timestamps, which every status item of every
+// instance carries (ADR 0083: no plain opt-out). [publisher.StatePublisher.PublishStatus]
+// deduplicates on `val`, so a value re-reported unchanged on every poll is
+// one publish, not one per poll.
+//
 // CommandFilters is the one thing the library can check that this bridge
-// could not: a state topic that fell inside this process's own /set
+// could not: a state topic that fell inside this process's own `set`
 // subscription would be echoed back into the command handler, and the filter
 // is stated once ([CommandFilter]) and read by both the subscriber and the
 // guard.
-func HAStateConfig(root string, logger *slog.Logger) publisher.StateConfig {
+func HAStateConfig(name string, logger *slog.Logger) publisher.StateConfig {
 	return publisher.StateConfig{
 		QoS:            publisher.QoSAtMostOnce,
 		PulseQoS:       publisher.QoSAtMostOnce,
-		Encoding:       discovery.RawEncoding,
-		CommandFilters: []string{CommandFilter(root)},
+		Encoding:       discovery.StatusObjectEncoding,
+		CommandFilters: []string{CommandFilter(name)},
 		Logger:         logger,
 	}
 }
 
-// Run subscribes to command topics and drives the backend until ctx ends.
+// Run starts the command router and drives the backend until ctx ends.
 func (c *Coordinator) Run(ctx context.Context) error {
 	c.runCtx = ctx
 	c.PublishOnline(ctx)
 
-	setFilter := CommandFilter(c.root)
-	if _, err := c.deps.MQTT.Subscribe(ctx, setFilter, mqtt.QoS0, c.handleSet); err != nil {
-		// A failed initial subscribe is not replayed on later reconnects (the
-		// client rolls back the registration), so without a retry every /set
-		// command would be silently dropped until restart. Retry in the
+	if err := c.startCommands(ctx); err != nil {
+		// A failed start leaves the router un-started and retriable (the
+		// library rolls its subscriptions back), so without a retry every
+		// `set` would be silently dropped until restart. Retry in the
 		// background until it lands or the daemon stops.
-		c.logger.Warn("coordinator.subscribe_failed", slog.String("filter", setFilter), slog.String("err", err.Error()))
-		go c.retrySubscribe(ctx, "coordinator.subscribe", setFilter, c.subscribeCommands)
+		c.logger.Warn("coordinator.subscribe_failed", slog.String("filter", c.topics.CommandFilter()), slog.String("err", err.Error()))
+		go c.retrySubscribe(ctx, "coordinator.subscribe", c.topics.CommandFilter(), c.startCommands)
 	}
+	defer func() {
+		// Drain a write still in flight rather than abandoning it; bounded,
+		// because a device that does not answer must not hold the shutdown.
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_ = c.commands.Stop(stopCtx)
+	}()
 
 	// Home Assistant's own birth message. Discovery configs are retained, so
 	// an HA restart is survived without this — but a broker restarted without
@@ -312,15 +348,14 @@ func (c *Coordinator) Run(ctx context.Context) error {
 const setSubscribeMaxBackoff = 30 * time.Second
 
 // retrySubscribe re-issues one subscription with capped backoff until it
-// succeeds or ctx is cancelled. A duplicate success is idempotent (the client
-// replaces the handler in place), and once registered go-mqtt replays it across
+// succeeds or ctx is cancelled. Once registered, go-mqtt replays it across
 // all later reconnects.
 //
 // It takes the subscribe call rather than the filter because both of this
-// daemon's Home Assistant subscriptions need it for the same reason and the
-// birth one goes through the library: a failed initial subscribe is not
-// replayed on a later reconnect, so without a retry the command plane would be
-// silently dead — and the birth resync silently absent — until a restart.
+// daemon's subscriptions need it for the same reason and both go through the
+// library: a failed initial subscribe is not replayed on a later reconnect,
+// so without a retry the command plane would be silently dead — and the
+// birth resync silently absent — until a restart.
 func (c *Coordinator) retrySubscribe(ctx context.Context, event, filter string, subscribe func(context.Context) error) {
 	backoff := time.Second
 	for {
@@ -337,10 +372,10 @@ func (c *Coordinator) retrySubscribe(ctx context.Context, event, filter string, 
 	}
 }
 
-// subscribeCommands registers the /set handler.
-func (c *Coordinator) subscribeCommands(ctx context.Context) error {
-	_, err := c.deps.MQTT.Subscribe(ctx, CommandFilter(c.root), mqtt.QoS0, c.handleSet)
-	return err
+// startCommands starts the command router: the `set` route and whatever the
+// composition root registered beside it (the maintenance topics).
+func (c *Coordinator) startCommands(ctx context.Context) error {
+	return c.commands.Start(ctx)
 }
 
 // watchBirth registers the Home Assistant birth subscription.
@@ -348,17 +383,15 @@ func (c *Coordinator) watchBirth(ctx context.Context) error {
 	return c.deps.HARuntime.WatchBirth(ctx)
 }
 
-// PublishOnline (re)announces bridge availability. Wired to OnConnect.
+// PublishOnline (re)announces the instance on a broker (re)connect. Wired to
+// OnConnect.
+//
+// It writes `<name>/connected` at the current level — 1 until the backend
+// reports its upstream usable, 2 while it is — and re-sends every cached
+// status item unchanged, original `ts` included (spec §3.2: status is
+// published again after every broker reconnect, so the retained state is
+// complete even on a broker that came back without its store).
 func (c *Coordinator) PublishOnline(ctx context.Context) {
-	// A (re)connect may be to a broker that came back without its retained
-	// store, in which case the dedup gate would suppress every value it
-	// believes is already there and leave every entity blank until its next
-	// change — which on chargeMaxLimit or packNum is never. Reset opens the
-	// gate without forgetting the index, so the next poll writes the fleet
-	// once and is deduped again afterwards. The poll is the snapshot pass
-	// the library's Reset documentation asks a consumer to pair it with.
-	c.deps.StatePlane.Reset()
-
 	// The same reopening on the discovery plane, and it closes a window
 	// whose only symptom is silence. publisher.Runtime memoises a superseded
 	// per-entity config as cleared the moment Transport.Publish returns nil
@@ -389,15 +422,56 @@ func (c *Coordinator) PublishOnline(ctx context.Context) {
 	if err := c.deps.HARuntime.AnnounceOnline(ctx); err != nil {
 		c.logger.Warn("coordinator.online_failed", slog.String("err", err.Error()))
 	}
+	if _, err := c.deps.StatePlane.Republish(ctx); err != nil {
+		c.logger.Warn("coordinator.republish_failed", slog.String("err", err.Error()))
+	}
 }
 
-// PublishOffline marks the bridge offline on a graceful shutdown. The LWT
+// PublishOffline writes `<name>/connected` 0 on a graceful shutdown. The LWT
 // only fires on an ungraceful disconnect (crash / network drop), so a clean
-// stop must announce offline explicitly or the retained status stays online.
+// stop must say it explicitly or the retained level stays at 1 or 2.
 func (c *Coordinator) PublishOffline(ctx context.Context) {
 	if err := c.deps.HARuntime.AnnounceOffline(ctx); err != nil {
 		c.logger.Warn("coordinator.offline_failed", slog.String("err", err.Error()))
 	}
+}
+
+// upstreamTimeout bounds one connected/online publish from a backend
+// callback.
+const upstreamTimeout = 5 * time.Second
+
+// UpstreamUsable implements [source.Observer]: `<name>/connected` is 2 while
+// the backend reaches what it bridges and 1 while it does not. The runtime
+// publishes only a change, so a backend may report every poll.
+func (c *Coordinator) UpstreamUsable(usable bool) {
+	level := discovery.ConnectedBroker
+	if usable {
+		level = discovery.ConnectedOperational
+	}
+	ctx, cancel := c.callbackContext()
+	defer cancel()
+	if _, err := c.deps.HARuntime.SetConnected(ctx, level); err != nil {
+		c.logger.Warn("coordinator.connected_failed", slog.Int("level", level), slog.String("err", err.Error()))
+	}
+}
+
+// DeviceReachable implements [source.Observer]: the unit's
+// `<name>/status/<sn>/online` item, a boolean status object deduplicated on
+// its value like every other.
+func (c *Coordinator) DeviceReachable(dev source.Device, reachable bool) {
+	ctx, cancel := c.callbackContext()
+	defer cancel()
+	c.publishState(ctx, c.topics.Online(dev.SN), reachable)
+}
+
+// callbackContext bounds a backend callback, under the daemon's lifetime once
+// Run has started.
+func (c *Coordinator) callbackContext() (context.Context, context.CancelFunc) {
+	parent := c.runCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, upstreamTimeout)
 }
 
 // onReading resolves a report and publishes every point (plus discovery).
@@ -413,7 +487,7 @@ func (c *Coordinator) onReading(ctx context.Context, r source.Reading) {
 // publish resolves a report (catalogued points + virtual switches) and emits
 // each point's state plus, on first sight, the HA discovery configs.
 func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *model.Report) {
-	points := process.Resolve(report, c.deps.Catalog, c.deps.Cfg.Language)
+	points := process.Resolve(report, c.deps.Catalog)
 	points = append(points, c.switchPoints(report)...)
 
 	if c.deps.State != nil {
@@ -432,7 +506,7 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 	}
 	written := 0
 	for _, p := range points {
-		if c.publishState(ctx, process.StateTopic(c.root, dev.SN, p), formatValue(p.Value)) {
+		if c.publishState(ctx, c.topics.StateTopic(dev.SN, p), p.Value) {
 			written++
 		}
 	}
@@ -444,26 +518,20 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		slog.String("sn", dev.SN), slog.Int("points", len(points)), slog.Int("written", written))
 }
 
-// publishState writes one point's value through the state plane and reports
+// publishState writes one status item through the state plane and reports
 // whether it actually reached the broker.
 //
-// The dedup gate inside [publisher.StatePublisher.Publish] is the whole point
-// of routing through it: a value byte-identical to the one the broker already
-// retains is not written again. Nothing about the topic, the payload, the
-// retain flag or the QoS changes — the payload is still [formatValue]'s
-// bytes, deliberately, because the library's own [publisher.RenderRawValue]
-// renders a Go bool as "true"/"false" where this bridge has always published
-// "1"/"0", and a state plane migration is not the place to change a payload.
+// The value becomes the status object's `val` as it is: a float64 scaled to
+// display units is a JSON number, an enum token a string, a switch state a
+// boolean. [publisher.StatePublisher.PublishStatus] compares `val` only, so
+// an unchanged value is not written again, whatever its observation time.
 //
-// An empty payload is routed to Evict rather than to Publish. [formatValue]
-// renders an empty string value as zero bytes, and an empty retained payload
-// is MQTT's retraction rather than a state — which is what this bridge has
-// always done with it, by accident. Evict is the same three wire values
-// (empty payload, retained, QoS 0) said on purpose, and it drops the topic
-// from the dedup index so the next real value is not compared against a
-// retraction.
-func (c *Coordinator) publishState(ctx context.Context, topic string, payload []byte) bool {
-	if len(payload) == 0 {
+// No value — nil, or the empty string a device can report — is routed to
+// Evict, the empty retained payload that clears the item, which is what this
+// bridge has always done with an empty value. Evict also drops the topic from
+// the dedup index so the next real value starts a new `lc`.
+func (c *Coordinator) publishState(ctx context.Context, topic string, value any) bool {
+	if value == nil || value == "" {
 		if err := c.deps.StatePlane.Evict(ctx, topic); err != nil {
 			c.logger.Warn("coordinator.state_evict_failed",
 				slog.String("topic", topic), slog.String("err", err.Error()))
@@ -471,7 +539,7 @@ func (c *Coordinator) publishState(ctx context.Context, topic string, payload []
 		}
 		return true
 	}
-	written, err := c.deps.StatePlane.Publish(ctx, topic, payload)
+	written, err := c.deps.StatePlane.PublishStatus(ctx, topic, publisher.Observation{Value: value})
 	if err != nil {
 		c.logger.Warn("coordinator.publish_failed",
 			slog.String("topic", topic), slog.String("err", err.Error()))
@@ -567,7 +635,7 @@ func (c *Coordinator) sweepOrphans(ctx context.Context, sn string, published map
 		ReportOnly: true,
 		Window:     reconcileCollectWindow,
 		Owns: func(t publisher.ConfigTopic) bool {
-			return hass.OwnsDeviceConfigTopic(c.root, sn, t)
+			return hass.OwnsDeviceConfigTopic(c.identity, sn, t)
 		},
 		Inspect: func(t publisher.ConfigTopic, body []byte) {
 			// Called on the transport's read loop: cheap, and it publishes
@@ -684,49 +752,66 @@ func (c *Coordinator) reReadSoon(dev source.Device) {
 	}()
 }
 
-// handleSet routes an inbound command topic to a backend write.
-// Topic shape: <root>/<sn>/<group>/<topic>/set.
-func (c *Coordinator) handleSet(msg *mqtt.Message) {
-	parts := strings.Split(msg.Topic, "/")
-	if len(parts) != 5 || parts[0] != c.root || parts[4] != "set" {
+// setTimeout bounds one backend write.
+const setTimeout = 15 * time.Second
+
+// handleSet routes one `set` item to a backend write. Route:
+// `<name>/set/<sn>/<group>/<topic>`, so the wildcards are the serial, the
+// group and the topic leaf.
+//
+// It runs on a command-router worker, never on the transport's read loop, so
+// the write is made here rather than on a goroutine of its own. A rejected or
+// failed request is logged at warn with its topic and payload (spec §3.3);
+// a successful one is not echoed — the status follows from the re-read.
+func (c *Coordinator) handleSet(ctx context.Context, cmd publisher.Command, v publisher.SetValue) {
+	if len(cmd.Wildcards) != 3 {
 		return
 	}
-	sn, leaf := parts[1], parts[3]
+	sn, leaf := cmd.Wildcards[0], cmd.Wildcards[2]
+	reject := func(event string, attrs ...slog.Attr) {
+		attrs = append([]slog.Attr{
+			slog.String("topic", cmd.Topic), slog.String("payload", string(cmd.Payload)),
+		}, attrs...)
+		c.logger.LogAttrs(ctx, slog.LevelWarn, event, attrs...)
+	}
+
 	c.snMu.RLock()
 	dev, ok := c.bySN[sn]
 	c.snMu.RUnlock()
 	if !ok {
-		c.logger.Warn("coordinator.set_unknown_device", slog.String("sn", sn))
+		reject("coordinator.set_unknown_device", slog.String("sn", sn))
 		return
 	}
-	if c.handleSwitchSet(dev, leaf, string(msg.Payload)) {
-		return // handled by a virtual switch
-	}
-	entry, ok := c.deps.Catalog.ByTopic(leaf)
-	if !ok || !entry.Writable {
-		c.logger.Warn("coordinator.set_not_writable", slog.String("topic", leaf))
-		return
-	}
-	value, ok := decodeCommand(entry, string(msg.Payload))
+
+	props, ok := c.switchProps(leaf, v)
 	if !ok {
-		c.logger.Warn("coordinator.set_rejected",
-			slog.String("sn", sn), slog.String("property", entry.Property), slog.String("payload", string(msg.Payload)))
-		return
-	}
-	// Write off the read loop: go-mqtt dispatches handlers synchronously, so a
-	// slow/unreachable device would otherwise stall all inbound dispatch and can
-	// trip the keep-alive watchdog.
-	go func() {
-		ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
-		defer cancel()
-		if err := c.deps.Backend.Write(ctx, dev, map[string]any{entry.Property: value}); err != nil {
-			c.logger.Warn("coordinator.write_failed",
-				slog.String("sn", sn), slog.String("property", entry.Property), slog.String("err", err.Error()))
+		entry, known := c.deps.Catalog.ByTopic(leaf)
+		if !known || !entry.Writable {
+			reject("coordinator.set_not_writable")
 			return
 		}
-		c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("property", entry.Property))
-		c.reReadSoon(dev)
-	}()
+		value, valid := decodeSet(entry, v)
+		if !valid {
+			reject("coordinator.set_rejected", slog.String("property", entry.Property))
+			return
+		}
+		props = map[string]any{entry.Property: value}
+	} else if props == nil {
+		reject("coordinator.set_rejected", slog.String("switch", leaf))
+		return
+	}
+
+	// Bounded, and cut short when the daemon stops: the router's handler
+	// context outlives Run.
+	wctx, cancel := context.WithTimeout(ctx, setTimeout)
+	defer cancel()
+	defer context.AfterFunc(c.runCtx, cancel)() //nolint:contextcheck // cancels the write on shutdown; it derives no context
+	if err := c.deps.Backend.Write(wctx, dev, props); err != nil {
+		reject("coordinator.write_failed", slog.String("sn", sn), slog.String("err", err.Error()))
+		return
+	}
+	c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("topic", cmd.Topic))
+	c.reReadSoon(dev) //nolint:contextcheck // the re-read outlives this request; it is bounded by the daemon's lifetime
 }
 
 // switchPoints builds synthetic switch points so the virtual switches flow
@@ -749,60 +834,64 @@ func (c *Coordinator) switchPoints(report *model.Report) []process.Point {
 	return pts
 }
 
-// handleSwitchSet writes a virtual switch's property set and reports whether
-// leaf matched one of them.
-func (c *Coordinator) handleSwitchSet(dev source.Device, leaf, payload string) bool {
+// switchProps resolves a virtual switch's `set`: ok reports whether leaf names
+// a switch at all, and props is the property set to write — nil when the
+// payload is not a boolean (§5.3: true/false, 1/0, on/off, yes/no).
+func (c *Coordinator) switchProps(leaf string, v publisher.SetValue) (props map[string]any, ok bool) {
 	for i := range c.switches {
 		sw := c.switches[i]
 		if sw.Topic != leaf {
 			continue
 		}
-		on := isOn(payload)
-		// Off the read loop — see handleSet.
-		go func() {
-			ctx, cancel := context.WithTimeout(c.runCtx, 15*time.Second)
-			defer cancel()
-			if err := c.deps.Backend.Write(ctx, dev, sw.WriteProps(on)); err != nil {
-				c.logger.Warn("coordinator.switch_write_failed",
-					slog.String("sn", dev.SN), slog.String("switch", leaf), slog.String("err", err.Error()))
-				return
+		on, err := v.Bool()
+		if err != nil {
+			return nil, true
+		}
+		return sw.WriteProps(on), true
+	}
+	return nil, false
+}
+
+// decodeSet turns a normalised `set` value into the value the device expects.
+//
+// An enum entry takes its token in any case, or either language's label, and
+// writes the raw code behind it ([publisher.SetValue.Enum] over
+// [harender.Enum]); a bare number still reaches [decodeCommand] and is
+// written as that code, as before. Anything else goes through decodeCommand
+// unchanged. A structured payload names no value this bridge could write, and
+// a select given neither a token nor a number is rejected rather than handed
+// to the device as text.
+func decodeSet(entry catalog.Entry, v publisher.SetValue) (any, bool) {
+	if v.Structured() {
+		return nil, false
+	}
+	if enum := harender.Enum(entry); enum != nil {
+		if token, err := v.Enum(enum, true); err == nil {
+			code, _ := entry.CodeForToken(token)
+			if i, err := strconv.Atoi(code); err == nil {
+				return i, true
 			}
-			c.logger.Info("coordinator.switch_write",
-				slog.String("sn", dev.SN), slog.String("switch", leaf), slog.Bool("on", on))
-			c.reReadSoon(dev)
-		}()
-		return true
+			return code, true
+		}
+		value, ok := decodeCommand(entry, v.Text)
+		if _, text := value.(string); text {
+			return nil, false
+		}
+		return value, ok
 	}
-	return false
+	return decodeCommand(entry, v.Text)
 }
 
-// isOn interprets an MQTT switch command payload.
-func isOn(payload string) bool {
-	switch strings.ToLower(strings.TrimSpace(payload)) {
-	case "1", "on", "true":
-		return true
-	default:
-		return false
-	}
-}
-
-// decodeCommand turns an MQTT payload string into the value the device
-// expects, returning ok=false when the payload must be rejected. A select
-// label (English or German) maps back to its integer code. A numeric value is
-// clamped to the catalog's advertised min/max (HA enforces those only in its
-// own UI, not for other publishers), then converted to the device's raw units
-// by inverting the read scaling (read is (raw-offset)/scale, so write is
+// decodeCommand turns a plain `set` value into the value the device expects,
+// returning ok=false when it must be rejected. A numeric value is clamped to
+// the catalog's advertised min/max (HA enforces those only in its own UI, not
+// for other publishers), then converted to the device's raw units by
+// inverting the read scaling (read is (raw-offset)/scale, so write is
 // value*scale+offset) and rounded to an integer — Zendure properties are
-// integer-valued. NaN/Inf and out-of-int64-range values are rejected so garbage
-// never reaches the hardware. Non-numeric, non-label payloads stay strings.
+// integer-valued. NaN/Inf and out-of-int64-range values are rejected so
+// garbage never reaches the hardware. Non-numeric payloads stay strings.
 func decodeCommand(entry catalog.Entry, payload string) (any, bool) {
 	payload = strings.TrimSpace(payload)
-	if code, ok := entry.CodeForLabel(payload); ok {
-		if i, err := strconv.Atoi(code); err == nil {
-			return i, true
-		}
-		return code, true
-	}
 	if f, err := strconv.ParseFloat(payload, 64); err == nil {
 		if math.IsNaN(f) || math.IsInf(f, 0) {
 			return nil, false
@@ -824,21 +913,4 @@ func decodeCommand(entry catalog.Entry, payload string) (any, bool) {
 		return int(math.Round(f)), true
 	}
 	return payload, true
-}
-
-// formatValue renders a resolved value as an MQTT payload.
-func formatValue(v any) []byte {
-	switch n := v.(type) {
-	case float64:
-		return []byte(strconv.FormatFloat(n, 'f', -1, 64))
-	case string:
-		return []byte(n)
-	case bool:
-		if n {
-			return []byte("1")
-		}
-		return []byte("0")
-	default:
-		return []byte(fmt.Sprintf("%v", n))
-	}
 }

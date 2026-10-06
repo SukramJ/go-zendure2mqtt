@@ -65,7 +65,7 @@ func TestResolveScalingAndValueMap(t *testing.T) {
 		Properties: map[string]any{
 			"electricLevel": float64(75),
 			"hyperTmp":      float64(2981), // (2981-2731)/10 = 25.0 °C
-			"acMode":        float64(2),    // -> "output"
+			"acMode":        float64(2),    // -> token "discharge"
 			"unknownProp":   float64(7),    // no entry -> misc, raw
 		},
 		PackData: []map[string]any{
@@ -73,7 +73,7 @@ func TestResolveScalingAndValueMap(t *testing.T) {
 		},
 	}
 
-	points := process.Resolve(rep, cat, "en")
+	points := process.Resolve(rep, cat)
 
 	if p, ok := find(points, "now", "temperature"); !ok {
 		t.Error("temperature point missing")
@@ -84,7 +84,7 @@ func TestResolveScalingAndValueMap(t *testing.T) {
 	if p, ok := find(points, "config", "ac_mode"); !ok {
 		t.Error("ac_mode point missing")
 	} else if p.Value != "discharge" {
-		t.Errorf("ac_mode = %v, want discharge (value_map)", p.Value)
+		t.Errorf("ac_mode = %v, want the token discharge (value_map)", p.Value)
 	}
 
 	if p, ok := find(points, process.GroupMisc, "unknownProp"); !ok {
@@ -100,40 +100,51 @@ func TestResolveScalingAndValueMap(t *testing.T) {
 	}
 }
 
-func TestResolveGermanSelectLabel(t *testing.T) {
+// TestResolvePublishesTokensNotLabels pins openccu-loom ADR 0083's enum rule:
+// the wire carries the stable token — the English value_map entry — whatever
+// LANGUAGE says, and the German label lives in discovery only. Before 0.10.0
+// a German instance published "Laden" here.
+func TestResolvePublishesTokensNotLabels(t *testing.T) {
 	cat := loadCatalog(t)
-	rep := &model.Report{SN: "SF1", Properties: map[string]any{"acMode": float64(1)}}
+	rep := &model.Report{SN: "SF1", Properties: map[string]any{"acMode": float64(1), "hyperTmp": float64(9)}}
 
-	points := process.Resolve(rep, cat, "de")
+	points := process.Resolve(rep, cat)
 	p, ok := find(points, "config", "ac_mode")
 	if !ok {
 		t.Fatal("ac_mode point missing")
 	}
-	if p.Value != "Laden" {
-		t.Errorf("ac_mode (de) = %v, want Laden", p.Value)
+	if p.Value != "charge" {
+		t.Errorf("ac_mode = %v, want the token charge", p.Value)
 	}
 
-	// The German label must reverse-map back to the raw code for writes.
+	// The token maps back to the raw code for writes, in any case, and the
+	// labels stay available for discovery.
 	entry, _ := cat.ByTopic("ac_mode")
-	if code, ok := entry.CodeForLabel("Laden"); !ok || code != "1" {
-		t.Errorf("CodeForLabel(Laden) = %q,%v, want 1,true", code, ok)
+	if code, ok := entry.CodeForToken("CHARGE"); !ok || code != "1" {
+		t.Errorf("CodeForToken(CHARGE) = %q,%v, want 1,true", code, ok)
+	}
+	if _, ok := entry.CodeForToken("Laden"); ok {
+		t.Error("CodeForToken accepted a label; labels are matched by the set path, not as tokens")
 	}
 	if got := entry.Options("de"); len(got) != 2 || got[0] != "Laden" || got[1] != "Entladen" {
 		t.Errorf("Options(de) = %v, want [Laden Entladen]", got)
 	}
+
+	// A code the value map does not know keeps its number, as before.
+	rep.Properties["acMode"] = float64(9)
+	if p, _ := find(process.Resolve(rep, cat), "config", "ac_mode"); p.Value != float64(9) {
+		t.Errorf("unmapped code = %v, want the raw 9", p.Value)
+	}
 }
 
-func TestStateAndCommandTopics(t *testing.T) {
+func TestItemPath(t *testing.T) {
 	p := process.Point{Group: "config", Topic: "ac_mode"}
-	if got := process.StateTopic("zendure", "SF1", p); got != "zendure/SF1/config/ac_mode/state" {
-		t.Errorf("StateTopic = %q", got)
-	}
-	if got := process.CommandTopic("zendure", "SF1", p); got != "zendure/SF1/config/ac_mode/set" {
-		t.Errorf("CommandTopic = %q", got)
+	if got := strings.Join(process.Item("SF1", p), "/"); got != "SF1/config/ac_mode" {
+		t.Errorf("Item = %q", got)
 	}
 	pack := process.Point{Group: process.GroupBattery, PackSN: "PACK1", Topic: "soc_level"}
-	if got := process.StateTopic("zendure", "SF1", pack); got != "zendure/SF1/battery/PACK1/soc_level/state" {
-		t.Errorf("pack StateTopic = %q", got)
+	if got := strings.Join(process.Item("SF1", pack), "/"); got != "SF1/battery/PACK1/soc_level" {
+		t.Errorf("pack Item = %q", got)
 	}
 }
 
@@ -150,7 +161,7 @@ func TestResolveSanitizesHostileTopicSegments(t *testing.T) {
 			{"sn": "", "socLevel": float64(50)},
 		},
 	}
-	points := process.Resolve(rep, cat, "en")
+	points := process.Resolve(rep, cat)
 
 	for _, p := range points {
 		if strings.ContainsAny(p.Topic, "/+#") {

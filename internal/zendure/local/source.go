@@ -31,6 +31,10 @@ type Backend struct {
 	interval time.Duration
 	http     *http.Client
 	logger   *slog.Logger
+
+	observer  source.Observer
+	reachMu   sync.Mutex
+	reachable map[string]bool // sn -> answered its latest poll
 }
 
 // New builds a local backend for the configured devices.
@@ -42,10 +46,11 @@ func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Back
 		interval = 15 * time.Second
 	}
 	b := &Backend{
-		interval: interval,
-		http:     &http.Client{Timeout: DefaultHTTPTimeout},
-		logger:   logger,
-		bySN:     make(map[string]source.Device, len(cfgs)),
+		interval:  interval,
+		http:      &http.Client{Timeout: DefaultHTTPTimeout},
+		logger:    logger,
+		bySN:      make(map[string]source.Device, len(cfgs)),
+		reachable: make(map[string]bool, len(cfgs)),
 	}
 	for _, c := range cfgs {
 		dev := source.Device{SN: c.SN, DeviceID: c.SN, DeviceName: c.DeviceName, Model: c.Model, Address: c.Host}
@@ -53,6 +58,27 @@ func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Back
 		b.bySN[c.SN] = dev
 	}
 	return b
+}
+
+// Observe implements [source.Observable].
+func (b *Backend) Observe(o source.Observer) { b.observer = o }
+
+// observe records one poll outcome and tells the observer. The upstream of
+// the local transport is the devices themselves, so it is usable while at
+// least one of them answered its latest poll.
+func (b *Backend) observe(dev source.Device, ok bool) {
+	if b.observer == nil {
+		return
+	}
+	b.reachMu.Lock()
+	b.reachable[dev.SN] = ok
+	usable := false
+	for _, r := range b.reachable {
+		usable = usable || r
+	}
+	b.reachMu.Unlock()
+	b.observer.DeviceReachable(dev, ok)
+	b.observer.UpstreamUsable(usable)
 }
 
 // Devices implements [source.Source].
@@ -99,12 +125,17 @@ func (b *Backend) pollLoop(ctx context.Context, dev source.Device, onReading sou
 func (b *Backend) pollOnce(ctx context.Context, dev source.Device, onReading source.Handler) {
 	report, err := FetchReport(ctx, b.http, dev.Address)
 	if err != nil {
+		if ctx.Err() != nil {
+			return // shutting down; not a statement about the device
+		}
 		b.logger.Warn("local.poll_failed", slog.String("sn", dev.SN), slog.String("err", err.Error()))
+		b.observe(dev, false)
 		return
 	}
 	if report.SN == "" {
 		report.SN = dev.SN
 	}
+	b.observe(dev, true)
 	onReading(source.Reading{Device: dev, Report: report})
 }
 

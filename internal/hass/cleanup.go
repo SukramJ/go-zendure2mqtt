@@ -23,8 +23,10 @@ import (
 // first start to clear.
 //
 // The test is the same in both: the unique_id must be in this bridge's
-// `<root>_` namespace and the state topic, where there is one, must be under
-// this bridge's MQTT root. In a document that is asked of every component,
+// `<identity>_` namespace and the state topic, where there is one, must be
+// under this instance's name or under the identity root — the root every
+// release before 0.10.0 published its state topics under, which a retained
+// config written by such a release still names. In a document that is asked of every component,
 // because a document is owned as a whole — it is retracted as a whole — and
 // one foreign component in it would mean the topic is not ours to clear.
 //
@@ -68,8 +70,10 @@ func (d *Discovery) IsOwnConfig(payload []byte) bool {
 
 // ownsIdentity is the ownership test for one entity's identity pair.
 func (d *Discovery) ownsIdentity(uniqueID, stateTopic string) bool {
-	return strings.HasPrefix(uniqueID, d.root+"_") &&
-		(stateTopic == "" || strings.HasPrefix(stateTopic, d.root+"/"))
+	return strings.HasPrefix(uniqueID, d.identity+"_") &&
+		(stateTopic == "" ||
+			strings.HasPrefix(stateTopic, d.name+"/") ||
+			strings.HasPrefix(stateTopic, d.identity+"/"))
 }
 
 // OwnsDeviceConfigTopic reports whether a parsed retained discovery config
@@ -108,8 +112,11 @@ func (d *Discovery) ownsIdentity(uniqueID, stateTopic string) bool {
 // [Discovery.IsOwnConfig] on the body the sweep inspects: the topic namespace
 // is specific but it is still a namespace, and a retained config this daemon
 // did not write must never be cleared on the strength of its topic alone.
-func OwnsDeviceConfigTopic(root, sn string, t publisher.ConfigTopic) bool {
-	device := root + "_" + sn
+//
+// identity is the identity root, config.Config.IdentityRoot — not the topic
+// name, which the identities do not carry.
+func OwnsDeviceConfigTopic(identity, sn string, t publisher.ConfigTopic) bool {
+	device := identity + "_" + sn
 	if t.Bundle {
 		return t.NodeID == device || strings.HasPrefix(t.NodeID, device+"_pack_")
 	}

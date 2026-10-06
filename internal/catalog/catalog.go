@@ -13,6 +13,7 @@ package catalog
 import (
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // Entry describes how a single Zendure property is surfaced.
@@ -89,6 +90,25 @@ func (e Entry) Label(code, lang string) (string, bool) {
 	return l, ok
 }
 
+// Token returns the stable wire token of a raw value-map code: the English
+// value_map entry, independent of LANGUAGE. Status items carry it and `set`
+// accepts it (openccu-loom ADR 0083); the localised label is for Home
+// Assistant's display only.
+func (e Entry) Token(code string) (string, bool) {
+	t, ok := e.ValueMap[code]
+	return t, ok
+}
+
+// CodeForToken maps a token back to its raw code, ignoring case.
+func (e Entry) CodeForToken(token string) (string, bool) {
+	for _, c := range e.sortedCodes() {
+		if strings.EqualFold(e.ValueMap[c], token) {
+			return c, true
+		}
+	}
+	return "", false
+}
+
 // Options returns the select option labels in stable (ascending code)
 // order, localised to lang.
 func (e Entry) Options(lang string) []string {
@@ -99,22 +119,6 @@ func (e Entry) Options(lang string) []string {
 		}
 	}
 	return out
-}
-
-// CodeForLabel reverse-maps a select label (in either language) back to its
-// raw code, so an inbound command resolves regardless of LANGUAGE.
-func (e Entry) CodeForLabel(label string) (string, bool) {
-	for c, l := range e.ValueMap {
-		if l == label {
-			return c, true
-		}
-	}
-	for c, l := range e.ValueMapDE {
-		if l == label {
-			return c, true
-		}
-	}
-	return "", false
 }
 
 // Codes returns the value-map codes in the order [Entry.Options] renders

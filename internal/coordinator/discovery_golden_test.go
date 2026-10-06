@@ -22,7 +22,6 @@ import (
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
-	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
@@ -46,6 +45,14 @@ var (
 	// Regenerating them would be regenerating the question.
 	legacyConfigPath   = filepath.Join("testdata", "legacy_per_entity_configs.json")
 	legacyIdentityPath = filepath.Join("testdata", "legacy_identity_configs.json")
+
+	// The 0.9.0 pins, frozen verbatim from that release's
+	// discovery_bundles.json and discovery_identity.json before the
+	// mqtt-smarthome move (openccu-loom ADR 0083) touched a byte. Read-only,
+	// for the same reason as the two above: they are the record the 0.10.0
+	// identity proof is taken against.
+	frozenBundlePath   = filepath.Join("testdata", "frozen_v0.9.0_bundles.json")
+	frozenIdentityPath = filepath.Join("testdata", "frozen_v0.9.0_identity.json")
 )
 
 // goldenEntry is one retained discovery publish, addressed the way the wire
@@ -218,15 +225,15 @@ func capturePublishWire(t *testing.T, dev source.Device, report *model.Report) (
 	t.Helper()
 
 	pub := &capturingClient{}
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	c := New(Deps{
 		Cfg:     cfg,
 		Backend: &goldenBackend{devices: []source.Device{dev}},
 		MQTT:    pub,
 		Catalog: goldenCatalog(t),
-		HASS: hass.New("homeassistant", cfg.MQTTTopic,
-			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic, cfg.IdentityRoot(),
+			testRenderer(cfg.Language), rt, discardLogger()),
 		Logger:     discardLogger(),
 		HARuntime:  rt,
 		StatePlane: newStatePlane(pub, cfg.MQTTTopic),
@@ -437,8 +444,8 @@ func goldenReport() *model.Report {
 // So this pins the whole payload, not a chosen set of keys. Everything on the
 // following list was pinned by nothing before: state_topic and command_topic
 // as they appear in a config (only the topic builder was covered, and
-// discovery calls it from a second site), availability_topic,
-// payload_available, payload_not_available, device.identifiers, via_device,
+// discovery calls it from a second site), the availability list,
+// device.identifiers, via_device,
 // model_id, serial_number, configuration_url, sw_version, device_class,
 // state_class, unit_of_measurement, min/max/step, options, payload_on and
 // payload_off — and 28 of the 29 entities.
@@ -559,9 +566,10 @@ func identityCases() []identityCase {
 // behaviour ("nothing is lost while the catalog is filled in") and was pinned
 // by nothing.
 //
-// The bridge status topic is not in the list: it is announced by PublishOnline
-// and PublishOffline, not by the publish path this captures. It is pinned
-// indirectly, as every entity's availability_topic, by the payload pins.
+// `<name>/connected` and the device's `online` item are not in the list: they
+// are published by PublishOnline/PublishOffline and the backend's
+// reachability callbacks, not by the publish path this captures. Both are
+// pinned as every entity's availability entries by the payload pins.
 //
 // Refresh with:
 //

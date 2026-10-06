@@ -29,21 +29,21 @@ func TestSwitchStateDerivation(t *testing.T) {
 	charging := &model.Report{Properties: map[string]any{
 		"acMode": float64(1), "inputLimit": float64(2200), "outputLimit": float64(0),
 	}}
-	if charge.State(charging) != "1" {
-		t.Errorf("charge state while charging = %q, want 1", charge.State(charging))
+	if !charge.State(charging) {
+		t.Errorf("charge state while charging = %v, want true", charge.State(charging))
 	}
-	if discharge.State(charging) != "0" {
-		t.Errorf("discharge state while charging = %q, want 0", discharge.State(charging))
+	if discharge.State(charging) {
+		t.Errorf("discharge state while charging = %v, want false", discharge.State(charging))
 	}
 
 	discharging := &model.Report{Properties: map[string]any{
 		"acMode": float64(2), "inputLimit": float64(0), "outputLimit": float64(900),
 	}}
-	if discharge.State(discharging) != "1" {
-		t.Errorf("discharge state while discharging = %q, want 1", discharge.State(discharging))
+	if !discharge.State(discharging) {
+		t.Errorf("discharge state while discharging = %v, want true", discharge.State(discharging))
 	}
-	if charge.State(discharging) != "0" {
-		t.Errorf("charge state while discharging = %q, want 0", charge.State(discharging))
+	if charge.State(discharging) {
+		t.Errorf("charge state while discharging = %v, want false", charge.State(discharging))
 	}
 }
 

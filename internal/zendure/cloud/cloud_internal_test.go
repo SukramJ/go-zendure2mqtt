@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -149,5 +150,42 @@ func TestWriteBeforeConnectAndReadUnsupported(t *testing.T) {
 	}
 	if _, err := b.Read(context.Background(), source.Device{}); !errors.Is(err, ErrNotImplemented) {
 		t.Errorf("Read err = %v, want ErrNotImplemented", err)
+	}
+}
+
+// recordingObserver records what the backend tells the coordinator.
+type recordingObserver struct {
+	events []string
+}
+
+func (o *recordingObserver) UpstreamUsable(u bool) {
+	o.events = append(o.events, "upstream="+strconv.FormatBool(u))
+}
+
+func (o *recordingObserver) DeviceReachable(dev source.Device, r bool) {
+	o.events = append(o.events, dev.SN+"="+strconv.FormatBool(r))
+}
+
+// TestCloudReportsReachability pins what feeds `<name>/connected` and
+// `<name>/status/<sn>/online` in cloud mode: the session is the upstream, a
+// report makes its device reachable, and a lost session takes every device
+// with it.
+func TestCloudReportsReachability(t *testing.T) {
+	dev := source.Device{SN: "SN1", DeviceID: "dev1", ProductKey: "pk"}
+	o := &recordingObserver{}
+	b := &Backend{
+		logger:    slog.New(slog.DiscardHandler),
+		byID:      map[string]source.Device{"dev1": dev},
+		devices:   []source.Device{dev},
+		onReading: func(source.Reading) {},
+	}
+	b.Observe(o)
+
+	b.sessionUp(true)
+	b.handleMessage(&mqtt.Message{Topic: "iot/pk/dev1/properties/report", Payload: []byte(`{}`)})
+	b.sessionUp(false)
+
+	if got, want := strings.Join(o.events, " "), "upstream=true SN1=true SN1=false upstream=false"; got != want {
+		t.Errorf("events = %q, want %q", got, want)
 	}
 }

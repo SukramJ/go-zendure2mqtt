@@ -151,10 +151,10 @@ fuzz: ## run every Fuzz target in $(FUZZ_PKG) for FUZZTIME (default 5m; local/pe
 # COVER_MIN_OVERRIDES pins every package that is below the floor today at
 # (the floor of) its current number. That makes this a ratchet rather than a
 # threshold: those packages cannot get *worse*, and raising one is a matter
-# of deleting its line. Six of them have no test file at all
+# of deleting its line. Five of them have no test file at all
 # (cmd/zendure2mqtt-util, internal/source, internal/state, internal/version,
-# internal/zendure/local, internal/zendure/model) — the pin records that as
-# a known state instead of letting a merged total paper over it.
+# internal/zendure/model) — the pin records that as a known state instead of
+# letting a merged total paper over it.
 COVER_MIN ?= 25
 COVER_MIN_OVERRIDES ?= \
 	cmd/zendure2mqtt=0 \
@@ -163,7 +163,6 @@ COVER_MIN_OVERRIDES ?= \
 	internal/state=0 \
 	internal/version=0 \
 	internal/zendure/cloud=8 \
-	internal/zendure/local=0 \
 	internal/zendure/model=0
 
 .PHONY: cover-check

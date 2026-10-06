@@ -51,6 +51,7 @@ type Backend struct {
 	client    *mqtt.TCPClient
 	onReading source.Handler
 	msgID     atomic.Int64
+	observer  source.Observer
 }
 
 // New builds a cloud backend from the operator's app token. tlsVerify enables
@@ -67,6 +68,25 @@ func New(token string, tlsVerify bool, logger *slog.Logger) *Backend {
 		logger:    logger,
 		byID:      map[string]source.Device{},
 	}
+}
+
+// Observe implements [source.Observable].
+func (b *Backend) Observe(o source.Observer) { b.observer = o }
+
+// sessionUp tells the observer the cloud session came up or went down. The
+// session is this transport's upstream: while it is down no device can be
+// read or written, so every known device is reported unreachable with it.
+// A device is reported reachable again by its next report.
+func (b *Backend) sessionUp(up bool) {
+	if b.observer == nil {
+		return
+	}
+	if !up {
+		for _, dev := range b.Devices() {
+			b.observer.DeviceReachable(dev, false)
+		}
+	}
+	b.observer.UpstreamUsable(up)
 }
 
 // maxLoginBackoff caps the login retry backoff. Higher than maxReconnect
@@ -210,6 +230,7 @@ func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
 		} else {
 			connectedAt := time.Now()
 			b.subscribeAll(ctx)
+			b.sessionUp(true)
 			select {
 			case <-ctx.Done():
 				// ctx is already cancelled here; detach from its cancellation
@@ -220,6 +241,7 @@ func (b *Backend) connectLoop(ctx context.Context, client *mqtt.TCPClient) {
 				cancel()
 				return
 			case <-client.ConnectionLost():
+				b.sessionUp(false)
 				up := time.Since(connectedAt)
 				b.logger.Warn("cloud.connection_lost", slog.Duration("up", up))
 				if up >= sessionStableAt {
@@ -279,6 +301,9 @@ func (b *Backend) handleMessage(msg *mqtt.Message) {
 	}
 	if report.SN == "" {
 		report.SN = dev.SN
+	}
+	if b.observer != nil {
+		b.observer.DeviceReachable(dev, true)
 	}
 	handler(source.Reading{Device: dev, Report: report})
 }

@@ -49,18 +49,26 @@ func main() {
 		return
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// One level for the whole process, so DEBUG and the maintenance
+	// topic's `loglevel` move the same handler.
+	level := new(slog.LevelVar)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
-	if err := run(*configPath, *catalogPath, logger); err != nil {
+	if err := run(*configPath, *catalogPath, logger, level); err != nil {
 		logger.Error("zendure2mqtt.fatal", slog.String("err", err.Error()))
 		os.Exit(1)
 	}
 }
 
+// supervisedEnv is this daemon's explicit answer to "does something restart
+// me after a clean exit": 1/true or 0/false; unset leaves it to
+// [publisher.DetectSupervised].
+const supervisedEnv = config.EnvPrefix + "SUPERVISED"
+
 // run wires dependencies and blocks until the context is cancelled
-// (SIGINT/SIGTERM) or a component fails.
-func run(configPath, catalogPath string, logger *slog.Logger) error {
+// (SIGINT/SIGTERM, or the maintenance restart) or a component fails.
+func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelVar) error {
 	logger.Info("zendure2mqtt.boot", slog.String("build", version.String()))
 
 	cfg, err := loadConfig(configPath, logger)
@@ -68,8 +76,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		return err
 	}
 	if cfg.Debug {
-		logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		slog.SetDefault(logger)
+		level.Set(slog.LevelDebug)
 	}
 
 	cat, err := catalog.LoadFile(catalogPath)
@@ -79,26 +86,32 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	logger.Info("zendure2mqtt.catalog_loaded",
 		slog.String("path", catalogPath), slog.Int("entries", len(cat.Entries())))
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+	// The graceful shutdown path, reachable from a signal and from the
+	// maintenance restart alike: cancelling it ends the errgroup, which
+	// publishes `<name>/connected` 0 below and returns nil — exit 0.
+	ctx, cancel := context.WithCancel(sigCtx)
 	defer cancel()
 
 	// --- Backend (local HTTP polling or cloud) ---
 	backend := buildBackend(cfg, logger)
 
-	// --- Home Assistant runtime (LWT, birth, retained configs, sweep) ---
+	// --- Home Assistant runtime (Last Will, connected, retained configs, sweep) ---
 	//
 	// Built before the MQTT client, because the Last Will is part of CONNECT
-	// and the will is this runtime's statement: Will() returns the same topic
-	// and the same payload AnnounceOnline and AnnounceOffline write, so the
-	// bridge structurally cannot configure a will no published entity
+	// and the will is this runtime's statement: Will() returns
+	// `<name>/connected` with 0, the topic AnnounceOnline and
+	// AnnounceOffline write and every entity's availability list reads, so
+	// the bridge structurally cannot configure a will no published entity
 	// references — the measured defect of two sibling bridges, where a hard
 	// crash writes "offline" where nothing reads it and every entity stays
 	// available forever. The client it publishes through does not exist yet,
 	// so the transport is wired in below, before anything connects.
 	//
-	// Every field of its config — the discovery prefix, this bridge's own
-	// status topic, QoS 0, and the per-entity topic form the migration
-	// retracts — is stated once, in coordinator.HARuntimeConfig, and the
+	// Every field of its config — the discovery prefix, this bridge's topic
+	// layout, QoS 0, and the per-entity topic form the migration retracts —
+	// is stated once, in coordinator.HARuntimeConfig, and the
 	// coordinator's constructor refuses a runtime that was not built from it.
 	// It used to be spelled here and again in the test fixtures, with nothing
 	// comparing the two; see that function for what the divergence cost.
@@ -162,14 +175,22 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	statePlane := publisher.NewStatePublisher(hagomqtt.Split(breaker, mqttClient),
 		coordinator.HAStateConfig(cfg.MQTTTopic, logger))
 
+	topics := coordinator.Layout(cfg.MQTTTopic)
+	if !topics.Conformant() {
+		logger.Warn("zendure2mqtt.name_not_conformant",
+			slog.String("name", cfg.MQTTTopic),
+			slog.String("hint", "MQTT_TOPIC spans several levels; mqtt-smarthome tools scanning +/info will not see this instance"))
+	}
+
 	// --- HA discovery (optional) ---
 	var hassDiscovery *hass.Discovery
 	if cfg.HASSEnable {
 		// Through the runtime rather than straight to the client: the runtime
 		// claims each config topic, and that claim is what the orphan sweep
-		// compares against and what the birth resync replays.
-		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic,
-			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, haRuntime, logger)
+		// compares against and what the birth resync replays. The identities
+		// stay on the pre-0.10.0 root, the topics move to the name.
+		hassDiscovery = hass.New(cfg.HASSBaseTopic, cfg.MQTTTopic, cfg.IdentityRoot(),
+			harender.Renderer{Topics: topics, IdentityRoot: cfg.IdentityRoot(), Lang: cfg.Language}, haRuntime, logger)
 	}
 
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
@@ -190,14 +211,51 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 		HARuntime:  haRuntime,
 		StatePlane: statePlane,
 	})
-	lifecycle.OnConnect(func(cctx context.Context) { coord.PublishOnline(cctx) })
+
+	// --- mqtt-smarthome instance: <name>/info and <name>/maintenance/… ---
+	instance := publisher.NewInstance(hagomqtt.Split(breaker, mqttClient), publisher.InstanceConfig{
+		Layout:  topics,
+		Name:    "go-zendure2mqtt",
+		Version: version.Version,
+		Extra: map[string]any{
+			"commit":     version.Commit,
+			"build_date": version.BuildDate,
+			"connection": cfg.Connection,
+		},
+		MaintenanceDisabled: !cfg.MaintenanceEnabled(),
+		SetLogLevel:         publisher.LevelVarSetter(level),
+		Supervised:          publisher.DetectSupervised(supervisedEnv),
+		Shutdown:            cancel,
+		StatsInterval:       publisher.StatsInterval(cfg.StatsIntervalSeconds()),
+		Logger:              logger,
+	})
+	if err := instance.Register(coord.Commands()); err != nil {
+		return fmt.Errorf("mqtt: maintenance routes: %w", err)
+	}
+
+	announceInfo := func(cctx context.Context) {
+		if err := instance.AnnounceInfo(cctx); err != nil {
+			logger.Warn("zendure2mqtt.info_failed", slog.String("err", err.Error()))
+		}
+	}
+	lifecycle.OnConnect(func(cctx context.Context) {
+		coord.PublishOnline(cctx)
+		announceInfo(cctx)
+	})
+	// The first connect may have happened before the hook was registered;
+	// coord.Run announces the rest of that connect itself.
+	if mqttClient.IsConnected() {
+		announceInfo(ctx)
+	}
 
 	logger.Info("zendure2mqtt.starting",
 		slog.String("connection", cfg.Connection), slog.String("mqtt", cfg.MQTTServer),
-		slog.Bool("hass", cfg.HASSEnable), slog.Bool("web", cfg.WebEnable), slog.String("lang", cfg.Language))
+		slog.Bool("hass", cfg.HASSEnable), slog.Bool("web", cfg.WebEnable), slog.String("lang", cfg.Language),
+		slog.String("name", cfg.MQTTTopic), slog.Bool("maintenance", instance.Maintenance()))
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return coord.Run(gctx) })
+	go func() { _ = instance.RunStats(gctx) }() // ErrStatsOff when disabled; never fatal
 
 	if cfg.WebEnable {
 		srv := web.New(web.Deps{
@@ -216,7 +274,7 @@ func run(configPath, catalogPath string, logger *slog.Logger) error {
 	// marker.
 	haRuntime.Close()
 
-	// Graceful shutdown: explicitly mark the bridge offline (the LWT only
+	// Graceful shutdown: explicitly write `<name>/connected` 0 (the LWT only
 	// fires on an ungraceful disconnect) before the deferred MQTT stop.
 	offCtx, offCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	coord.PublishOffline(offCtx)

@@ -2,8 +2,22 @@
   "zendure2mqtt_SF2400AC0012345_ac_mode": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/ac_mode/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/ac_mode",
       "default_entity_id": "select.zendure_sf2400ac0012345_ac_mode",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -24,17 +38,30 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "select",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/ac_mode/state",
-      "unique_id": "zendure2mqtt_SF2400AC0012345_ac_mode"
+      "state_topic": "zendure/status/SF2400AC0012345/config/ac_mode",
+      "unique_id": "zendure2mqtt_SF2400AC0012345_ac_mode",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_battery_voltage": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_battery_voltage",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -52,20 +79,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/battery_voltage/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/battery_voltage",
       "unique_id": "zendure2mqtt_SF2400AC0012345_battery_voltage",
-      "unit_of_measurement": "V"
+      "unit_of_measurement": "V",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_charge_active": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/charge_active",
       "default_entity_id": "switch.zendure_sf2400ac0012345_charge_active",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -82,19 +122,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
-      "payload_off": "0",
-      "payload_on": "1",
+      "payload_off": "false",
+      "payload_on": "true",
       "platform": "switch",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
-      "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
+      "state_topic": "zendure/status/SF2400AC0012345/config/charge_active",
+      "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active",
+      "value_template": "{{ value_json.val | lower }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_charge_max_limit": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_charge_max_limit",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -112,20 +165,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/static/charge_max_limit/state",
+      "state_topic": "zendure/status/SF2400AC0012345/static/charge_max_limit",
       "unique_id": "zendure2mqtt_SF2400AC0012345_charge_max_limit",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_discharge_active": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/discharge_active",
       "default_entity_id": "switch.zendure_sf2400ac0012345_discharge_active",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -142,19 +208,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
-      "payload_off": "0",
-      "payload_on": "1",
+      "payload_off": "false",
+      "payload_on": "true",
       "platform": "switch",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
-      "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
+      "state_topic": "zendure/status/SF2400AC0012345/config/discharge_active",
+      "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active",
+      "value_template": "{{ value_json.val | lower }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_electric_level": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_electric_level",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -172,19 +251,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/electric_level/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
-      "unit_of_measurement": "%"
+      "unit_of_measurement": "%",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_grid_input_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_grid_input_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -202,19 +294,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/grid_input_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/grid_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_grid_input_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_grid_off_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_grid_off_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -232,20 +337,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/grid_off_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/grid_off_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_grid_off_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_input_limit": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/input_limit/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/input_limit",
       "default_entity_id": "number.zendure_sf2400ac0012345_input_limit",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -264,20 +382,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "number",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/input_limit/state",
+      "state_topic": "zendure/status/SF2400AC0012345/config/input_limit",
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_input_limit",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_inverse_max_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/inverse_max_power/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/inverse_max_power",
       "default_entity_id": "number.zendure_sf2400ac0012345_inverse_max_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -296,20 +427,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "number",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/inverse_max_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/config/inverse_max_power",
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_inverse_max_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_min_soc": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/min_soc/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/min_soc",
       "default_entity_id": "number.zendure_sf2400ac0012345_min_soc",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -328,19 +472,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "number",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/min_soc/state",
+      "state_topic": "zendure/status/SF2400AC0012345/config/min_soc",
       "step": 1,
       "unique_id": "zendure2mqtt_SF2400AC0012345_min_soc",
-      "unit_of_measurement": "%"
+      "unit_of_measurement": "%",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_home_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_output_home_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -358,20 +515,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/output_home_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/output_home_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_home_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_limit": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/output_limit/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/output_limit",
       "default_entity_id": "number.zendure_sf2400ac0012345_output_limit",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -390,19 +560,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "number",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/output_limit/state",
+      "state_topic": "zendure/status/SF2400AC0012345/config/output_limit",
       "step": 100,
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_limit",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_output_pack_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_output_pack_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -420,19 +603,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/output_pack_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/output_pack_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_output_pack_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_count": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_count",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -449,17 +645,30 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/static/pack_count/state",
-      "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count"
+      "state_topic": "zendure/status/SF2400AC0012345/static/pack_count",
+      "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_pack_input_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_input_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -477,19 +686,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/pack_input_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/pack_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_input_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_remain_out_time": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_remain_out_time",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -507,19 +729,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/remain_out_time/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/remain_out_time",
       "unique_id": "zendure2mqtt_SF2400AC0012345_remain_out_time",
-      "unit_of_measurement": "min"
+      "unit_of_measurement": "min",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_rssi": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_rssi",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -537,20 +772,33 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/static/rssi/state",
+      "state_topic": "zendure/status/SF2400AC0012345/static/rssi",
       "unique_id": "zendure2mqtt_SF2400AC0012345_rssi",
-      "unit_of_measurement": "dBm"
+      "unit_of_measurement": "dBm",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_smart_mode": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/smart_mode/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/smart_mode",
       "default_entity_id": "select.zendure_sf2400ac0012345_smart_mode",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -571,18 +819,31 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "select",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/smart_mode/state",
-      "unique_id": "zendure2mqtt_SF2400AC0012345_smart_mode"
+      "state_topic": "zendure/status/SF2400AC0012345/config/smart_mode",
+      "unique_id": "zendure2mqtt_SF2400AC0012345_smart_mode",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_soc_set": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
-      "command_topic": "zendure2mqtt/SF2400AC0012345/config/soc_set/set",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
+      "command_topic": "zendure/set/SF2400AC0012345/config/soc_set",
       "default_entity_id": "number.zendure_sf2400ac0012345_soc_set",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -601,19 +862,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "number",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/config/soc_set/state",
+      "state_topic": "zendure/status/SF2400AC0012345/config/soc_set",
       "step": 1,
       "unique_id": "zendure2mqtt_SF2400AC0012345_soc_set",
-      "unit_of_measurement": "%"
+      "unit_of_measurement": "%",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_solar_input_power": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_solar_input_power",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -631,19 +905,32 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/solar_input_power/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/solar_input_power",
       "unique_id": "zendure2mqtt_SF2400AC0012345_solar_input_power",
-      "unit_of_measurement": "W"
+      "unit_of_measurement": "W",
+      "value_template": "{{ value_json.val }}"
     }
   },
   "zendure2mqtt_SF2400AC0012345_temperature": {
     "topic": "homeassistant/device/zendure2mqtt_SF2400AC0012345/config",
     "payload": {
-      "availability_topic": "zendure2mqtt/bridge/status",
+      "availability": [
+        {
+          "payload_available": "online",
+          "payload_not_available": "offline",
+          "topic": "zendure/connected",
+          "value_template": "{{ 'online' if value | int(0) \u003e= 2 else 'offline' }}"
+        },
+        {
+          "payload_available": "true",
+          "payload_not_available": "false",
+          "topic": "zendure/status/SF2400AC0012345/online",
+          "value_template": "{{ value_json.val | lower }}"
+        }
+      ],
+      "availability_mode": "all",
       "default_entity_id": "sensor.zendure_sf2400ac0012345_temperature",
       "device": {
         "configuration_url": "http://192.168.1.50",
@@ -661,13 +948,12 @@
       "origin": {
         "name": "go-zendure2mqtt"
       },
-      "payload_available": "online",
-      "payload_not_available": "offline",
       "platform": "sensor",
       "state_class": "measurement",
-      "state_topic": "zendure2mqtt/SF2400AC0012345/now/temperature/state",
+      "state_topic": "zendure/status/SF2400AC0012345/now/temperature",
       "unique_id": "zendure2mqtt_SF2400AC0012345_temperature",
-      "unit_of_measurement": "°C"
+      "unit_of_measurement": "°C",
+      "value_template": "{{ value_json.val }}"
     }
   }
 }
