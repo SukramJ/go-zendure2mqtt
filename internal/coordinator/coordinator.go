@@ -87,6 +87,10 @@ type Coordinator struct {
 	discMu      sync.Mutex        // guards lastDiscSig
 	lastDiscSig map[string]string // sn -> signature of the last published config-topic set
 	reconciling sync.Map          // sn -> struct{}; in-flight orphan-reconcile gate, one per device
+	migrated    sync.Map          // sn -> struct{}; old-layout sweep done or in flight, see migrate.go
+	// migrateWindow overrides the sweep's listening window; zero is
+	// [migrateWindow]. Only tests set it.
+	migrateWindow time.Duration
 }
 
 // New constructs a Coordinator.
@@ -339,6 +343,14 @@ func (c *Coordinator) Run(ctx context.Context) error {
 		}
 	}
 
+	// The old layout's retained topics (ADR 0083, "The retained sweep"):
+	// the bridge's own status topic now, every known device's tree now, and
+	// a device first learned from a cloud report when it reports.
+	go c.migrateBridge(ctx)
+	for _, dev := range c.deps.Backend.Devices() {
+		c.migrateDevice(ctx, dev.SN)
+	}
+
 	return c.deps.Backend.Run(ctx, func(r source.Reading) {
 		c.onReading(ctx, r)
 	})
@@ -481,6 +493,7 @@ func (c *Coordinator) onReading(ctx context.Context, r source.Reading) {
 		c.bySN[r.Device.SN] = r.Device // learn devices discovered at runtime (cloud)
 	}
 	c.snMu.Unlock()
+	c.migrateDevice(ctx, r.Device.SN)
 	c.publish(ctx, r.Device, r.Report)
 }
 

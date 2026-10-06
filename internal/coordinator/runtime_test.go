@@ -186,6 +186,7 @@ func newBrokerRig(t *testing.T, retained map[string][]byte) *brokerRig {
 		StatePlane: newStatePlane(broker, cfg.MQTTTopic),
 	})
 	c.runCtx = t.Context()
+	c.migrateWindow = 50 * time.Millisecond // the broker replays retained messages inline
 	t.Cleanup(rt.Close)
 	return &brokerRig{coord: c, broker: broker, dev: dev, root: cfg.MQTTTopic}
 }

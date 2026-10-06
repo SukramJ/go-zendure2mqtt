@@ -88,6 +88,7 @@ func newCommandRig(t *testing.T) *commandRig {
 		StatePlane: newStatePlane(broker, cfg.MQTTTopic),
 	})
 	c.runCtx = t.Context()
+	c.migrateWindow = 50 * time.Millisecond
 	t.Cleanup(rt.Close)
 	return &commandRig{coord: c, broker: broker, backend: backend, logs: logs}
 }
