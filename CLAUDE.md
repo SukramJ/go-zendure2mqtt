@@ -42,9 +42,12 @@ downstream — catalog, process, coordinator, hass, state/web — is transport-n
 
 ### Runtime wiring (`cmd/zendure2mqtt/main.go`, `run()`)
 Load config → load catalog (`zendure.yaml`) → `buildBackend` (local or cloud per
-`CONNECTION`) → connect the output MQTT (custom client + Lifecycle, LWT) → optional
-`hass.Discovery` and `state.Store` → `coordinator.Run` (+ optional `web` server) in an
-errgroup; on graceful shutdown publish `bridge/status=offline`, then stop.
+`CONNECTION`) → connect the output MQTT (custom client + Lifecycle, LWT
+`<name>/connected=0`) → optional `hass.Discovery` and `state.Store` → coordinator +
+`publisher.Instance` (`<name>/info`, maintenance routes on the coordinator's command
+router) → `coordinator.Run` (+ optional `web` server, stats loop) in an errgroup; on
+graceful shutdown (signal or maintenance restart, which cancels the same context)
+publish `<name>/connected=0`, then stop with exit 0.
 
 ### Coordinator (`internal/coordinator/`)
 Subscribes `<root>/+/+/+/set`, then drives the backend via an `onReading` callback →
@@ -70,13 +73,17 @@ Inbound `…/set`: `handleSwitchSet` (virtual switches) first, else `catalog.ByT
 
 ### Catalog & process (`zendure.yaml`, `internal/catalog`, `internal/process`)
 `Entry` maps a raw property → topic/group/platform/unit, with `offset`/`scale`
-(`value = (raw-offset)/scale`), `value_map`/`value_map_de` (code → en/de label, reversed on
-write), `writable`, `min`/`max`/`step`. `process.Resolve` flattens a report into `Point`s
-and expands `packData[]` into per-pack battery sub-entities; unmapped properties still
-publish under `…/misc/`. Topic helpers (`StateTopic`/`CommandTopic`) are the single source of
-the topic scheme.
+(`value = (raw-offset)/scale`), `value_map` (code → English **token**, what the wire carries) / `value_map_de` (German
+display label, discovery only), `writable`, `min`/`max`/`step`. `process.Resolve` flattens
+a report into `Point`s and expands `packData[]` into per-pack battery sub-entities;
+unmapped properties still publish under `…/misc/`. `process.Item` is the single source of
+the item path; `harender.Layout` (go-hamqtt `topic.SmartHome`) turns it into topics.
 
 ### HA discovery (`internal/hass`)
+**Identity invariant (do not break):** `unique_id`, device identifiers and node ids are
+built from `config.Config.IdentityRoot()` — `MQTT_TOPIC` if set, else `zendure2mqtt` — and
+**never** from the topic name (whose default became `zendure` in 0.10.0). Pinned against
+the frozen 0.9.0 documents (`testdata/frozen_v0.9.0_*.json`).
 **Entity-ID invariant (do not break):** `default_entity_id` (not `object_id`, which HA
 removed) is English/language-independent — `<platform>.<slug(deviceName)>_<english_topic>`;
 the display `name` is localized (German when `LANGUAGE: de`), and select option labels too
@@ -88,8 +95,10 @@ retained `homeassistant/.../config` topics, then republish).
 
 Discovery is **device-based**: one retained document per HA device at
 `homeassistant/device/<node_id>/config`, node id = the device identifier
-(`zendure2mqtt_<sn>`, `zendure2mqtt_<sn>_pack_<packSn>`), carrying the device block, an
-`origin` block and every entity as a component. It replaced 29 per-entity configs at the
+(`<identity-root>_<sn>`, `…_pack_<packSn>`), carrying the device block, an
+`origin` block and every entity as a component. Since 0.10.0 every entity reads
+`value_json.val` and is available while `<name>/connected` ≥ 2 and
+`<name>/status/<sn>/online` is true (`availability_mode: all`). It replaced 29 per-entity configs at the
 four-segment `homeassistant/<platform>/<unique_id>/config` in ADR 0070 phase 5 step 5, with
 `unique_id` and `default_entity_id` frozen. **The retraction of the old form comes first and
 the ordering is load-bearing**: HA refuses a document while a per-entity config for the same
@@ -125,15 +134,20 @@ third-party broker's MQTT 5.0 support is unverified. Shared module extracted fro
 projects (formerly a per-repo `internal/mqtt` copy); includes the `TCPClient.ConnectionLost()`
 channel that the cloud backend's reconnect loop reads.
 
-### Topic layout
+### Topic layout (mqtt-smarthome 2.0, openccu-loom ADR 0083; since 0.10.0)
 ```
-<MQTT_TOPIC>/<sn>/<group>/<topic>/state            # retained, QoS0 (group: now|config|static)
-<MQTT_TOPIC>/<sn>/battery/<packSn>/<topic>/state   # per-pack values
-<MQTT_TOPIC>/<sn>/<group>/<topic>/set              # subscribed, writable entities + switches
-<MQTT_TOPIC>/bridge/status                         # LWT + explicit offline on shutdown
-homeassistant/device/zendure2mqtt_<sn>/config              # HA discovery, retained (one document per device)
-homeassistant/device/zendure2mqtt_<sn>_pack_<packSn>/config # ... one per battery pack
+<name>/status/<sn>/<group>/<topic>             # retained status object {"val","ts","lc"}, QoS0
+<name>/status/<sn>/battery/<packSn>/<topic>    # per-pack values
+<name>/status/<sn>/online                      # true|false, device reachable
+<name>/set/<sn>/<group>/<topic>                # subscribed at QoS1, writable entities + switches
+<name>/connected                               # 0 (LWT/stop) | 1 (upstream unusable) | 2
+<name>/info                                    # retained instance info
+<name>/maintenance/set/{loglevel,restart}, <name>/maintenance/stats
+homeassistant/device/<identity-root>_<sn>/config               # HA discovery, one document per device
+homeassistant/device/<identity-root>_<sn>_pack_<packSn>/config # ... one per battery pack
 ```
+`<name>` = `MQTT_TOPIC` (default `zendure`). Pre-0.10.0 layout (cleared by the sweep):
+`<old>/<sn>/<group>/<topic>/state|set`, `<old>/bridge/status`.
 
 ## Config
 
@@ -141,7 +155,9 @@ Flat YAML (`config-template.yaml` documents every key); scalar keys overridable 
 `ZENDURE_<KEY>` env (bool/int/float coerced). Loader: file → env → defaults → validate.
 Key fields: `CONNECTION` (local|cloud), `LOCAL_DEVICES` (YAML list of SN+HOST), `REFRESH`,
 `CLOUD_APP_TOKEN`/`CLOUD_TLS_VERIFY`, `MQTT_*`, `HASS_*`, `WEB_*`, `LANGUAGE`,
-`CHARGE_ACTIVE_VALUE`/`DISCHARGE_ACTIVE_VALUE`. Required: `MQTT_SERVER`. Missing local
+`CHARGE_ACTIVE_VALUE`/`DISCHARGE_ACTIVE_VALUE`, `MQTT_MAINTENANCE`/`MQTT_STATS_INTERVAL`.
+`ZENDURE_SUPERVISED` (env only) answers whether a supervisor restarts the daemon (the
+maintenance restart is refused otherwise). Required: `MQTT_SERVER`. Missing local
 devices or cloud token is non-fatal — the daemon starts and stays idle. `config.yaml` holds
 credentials and is gitignored.
 

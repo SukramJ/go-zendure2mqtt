@@ -11,8 +11,6 @@ import (
 
 	"github.com/SukramJ/go-mqtt"
 
-	"github.com/SukramJ/go-zendure2mqtt/internal/config"
-	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )
@@ -186,11 +184,11 @@ func TestRetractionsAreReSentAfterAReconnect(t *testing.T) {
 	}
 	pub.lossy, pub.dieOnDocument = true, true
 
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	t.Cleanup(rt.Close)
-	disc := hass.New("homeassistant", cfg.MQTTTopic,
-		harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger())
+	disc := hass.New("homeassistant", cfg.MQTTTopic, cfg.IdentityRoot(),
+		testRenderer(cfg.Language), rt, discardLogger())
 	dev, report := goldenUnit(), goldenReport()
 	points := resolvePoints(t, dev, report)
 

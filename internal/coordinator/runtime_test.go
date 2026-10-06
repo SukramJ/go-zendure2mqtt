@@ -4,8 +4,8 @@
 package coordinator
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"maps"
 	"sort"
 	"strings"
@@ -17,8 +17,6 @@ import (
 	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 	"github.com/SukramJ/go-mqtt"
 
-	"github.com/SukramJ/go-zendure2mqtt/internal/config"
-	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )
@@ -37,8 +35,9 @@ type fakeBroker struct {
 	// retained is the broker's retained tree, seeded by a test and updated
 	// by every retained publish.
 	retained map[string][]byte
-	// subs maps a filter to its handler.
-	subs map[string]mqtt.MessageHandler
+	// subs maps a filter to its handler, subQoS to its requested QoS.
+	subs   map[string]mqtt.MessageHandler
+	subQoS map[string]mqtt.QoS
 	// wire is every publish, in order.
 	wire []wireRecord
 }
@@ -46,7 +45,7 @@ type fakeBroker struct {
 func newFakeBroker(retained map[string][]byte) *fakeBroker {
 	seeded := make(map[string][]byte, len(retained))
 	maps.Copy(seeded, retained)
-	return &fakeBroker{retained: seeded, subs: map[string]mqtt.MessageHandler{}}
+	return &fakeBroker{retained: seeded, subs: map[string]mqtt.MessageHandler{}, subQoS: map[string]mqtt.QoS{}}
 }
 
 func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, qos mqtt.QoS, retain bool, _ ...mqtt.PublishOption) error {
@@ -68,9 +67,10 @@ func (b *fakeBroker) Publish(_ context.Context, topic string, payload []byte, qo
 	return nil
 }
 
-func (b *fakeBroker) Subscribe(_ context.Context, filter string, _ mqtt.QoS, h mqtt.MessageHandler, _ ...mqtt.SubscribeOption) (mqtt.SubscribeResult, error) {
+func (b *fakeBroker) Subscribe(_ context.Context, filter string, qos mqtt.QoS, h mqtt.MessageHandler, _ ...mqtt.SubscribeOption) (mqtt.SubscribeResult, error) {
 	b.mu.Lock()
 	b.subs[filter] = h
+	b.subQoS[filter] = qos
 	matching := make([]string, 0, len(b.retained))
 	for topic := range b.retained {
 		if publisher.MatchFilter(filter, topic) {
@@ -101,6 +101,13 @@ func (b *fakeBroker) Unsubscribe(_ context.Context, filter string) error {
 // broker fans a live publish out.
 func (b *fakeBroker) deliver(t *testing.T, topic string, payload []byte) {
 	t.Helper()
+	b.deliverMessage(t, &mqtt.Message{Topic: topic, Payload: payload})
+}
+
+// deliverMessage is deliver for a message with its own flags (a retained one).
+func (b *fakeBroker) deliverMessage(t *testing.T, msg *mqtt.Message) {
+	t.Helper()
+	topic := msg.Topic
 	b.mu.Lock()
 	var handlers []mqtt.MessageHandler
 	for filter, h := range b.subs {
@@ -113,8 +120,16 @@ func (b *fakeBroker) deliver(t *testing.T, topic string, payload []byte) {
 		t.Fatalf("nothing is subscribed to %s", topic)
 	}
 	for _, h := range handlers {
-		h(&mqtt.Message{Topic: topic, Payload: payload})
+		h(msg)
 	}
+}
+
+// qosOf is the QoS a filter was subscribed at.
+func (b *fakeBroker) qosOf(filter string) (mqtt.QoS, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	q, ok := b.subQoS[filter]
+	return q, ok
 }
 
 // filters returns the currently installed subscription filters, sorted.
@@ -127,6 +142,14 @@ func (b *fakeBroker) filters() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// retainedPayload reports what the broker retains on topic.
+func (b *fakeBroker) retainedPayload(topic string) ([]byte, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	p, ok := b.retained[topic]
+	return p, ok
 }
 
 // publishes returns every publish the broker saw, in order.
@@ -148,7 +171,7 @@ type brokerRig struct {
 func newBrokerRig(t *testing.T, retained map[string][]byte) *brokerRig {
 	t.Helper()
 	broker := newFakeBroker(retained)
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	dev := goldenUnit()
 	rt := newHARuntime(broker, cfg.MQTTTopic)
 	c := New(Deps{
@@ -156,13 +179,14 @@ func newBrokerRig(t *testing.T, retained map[string][]byte) *brokerRig {
 		Backend: &goldenBackend{devices: []source.Device{dev}},
 		MQTT:    broker,
 		Catalog: goldenCatalog(t),
-		HASS: hass.New("homeassistant", cfg.MQTTTopic,
-			harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger()),
+		HASS: hass.New("homeassistant", cfg.MQTTTopic, cfg.IdentityRoot(),
+			testRenderer(cfg.Language), rt, discardLogger()),
 		Logger:     discardLogger(),
 		HARuntime:  rt,
 		StatePlane: newStatePlane(broker, cfg.MQTTTopic),
 	})
 	c.runCtx = t.Context()
+	c.migrateWindow = 50 * time.Millisecond // the broker replays retained messages inline
 	t.Cleanup(rt.Close)
 	return &brokerRig{coord: c, broker: broker, dev: dev, root: cfg.MQTTTopic}
 }
@@ -193,25 +217,17 @@ func (r *brokerRig) seedFleet(t *testing.T) map[string]bool {
 	return published
 }
 
-// TestBridgeStatusTopicIsOneString is the cross-check the library refuses a
-// disagreement on, run here because this bridge does not hand the runtime a
-// topic.Layout in production.
-//
-// One string is read by four parties: the Last Will configured at CONNECT,
-// publisher.Runtime's availability announcements, every published entity's
-// flat availability_topic, and harender's Layout.Bridge. Under the default
+// TestConnectedTopicIsOneString pins the one string four parties read: the
+// Last Will configured at CONNECT, publisher.Runtime's announcements, every
+// entity's first availability entry, and harender's Layout.Bridge — which
+// since 0.10.0 is mqtt-smarthome's `<name>/connected`. Under
 // availability_mode "all" a single typo greys out the entire fleet with
 // nothing on the wire naming the cause, which is why publisher.New panics on
 // a StatusTopic that disagrees with its Layout.
-//
-// Mutation check: changing BridgeStatusTopic's formula fails the harender
-// comparison, the pinned availability_topic in the golden files, and the
-// publisher.New construction below — which panics rather than returning.
-func TestBridgeStatusTopicIsOneString(t *testing.T) {
-	const root = "zendure2mqtt"
-	want := harender.Layout{Root: root}.Bridge()
-	if got := BridgeStatusTopic(root); got != want {
-		t.Fatalf("BridgeStatusTopic = %q, want harender.Layout.Bridge() = %q", got, want)
+func TestConnectedTopicIsOneString(t *testing.T) {
+	want := testName + "/connected"
+	if got := Layout(testName).Bridge(); got != want {
+		t.Fatalf("Layout.Bridge = %q, want %q", got, want)
 	}
 
 	broker := newFakeBroker(nil)
@@ -219,8 +235,8 @@ func TestBridgeStatusTopicIsOneString(t *testing.T) {
 		Prefix: "homeassistant",
 		// Both stated: with a Layout set, the library panics on a
 		// StatusTopic that disagrees with it. Passing both is the assertion.
-		StatusTopic: BridgeStatusTopic(root),
-		Layout:      harender.Layout{Root: root},
+		StatusTopic: want,
+		Layout:      Layout(testName),
 		QoS:         publisher.QoSAtMostOnce,
 		Logger:      discardLogger(),
 	})
@@ -231,8 +247,10 @@ func TestBridgeStatusTopicIsOneString(t *testing.T) {
 	// And the string the pinned configs actually carry.
 	captured := capturePublish(t, goldenUnit(), goldenReport())
 	for uid, entry := range discoveryEntries(t, captured) {
-		if got, _ := entry.Payload["availability_topic"].(string); got != want {
-			t.Errorf("%s: availability_topic = %q, want %q", uid, got, want)
+		avail, _ := entry.Payload["availability"].([]any)
+		first, _ := avail[0].(map[string]any)
+		if got, _ := first["topic"].(string); got != want {
+			t.Errorf("%s: first availability topic = %q, want %q", uid, got, want)
 		}
 	}
 }
@@ -241,30 +259,25 @@ func TestBridgeStatusTopicIsOneString(t *testing.T) {
 // produces rather than a literal in main.go.
 //
 // The measured defect in two sibling bridges is a will whose topic no
-// published entity references: the broker dutifully writes "offline" on a
+// published entity references: the broker dutifully writes its payload on a
 // hard crash and every entity in Home Assistant stays available forever,
-// showing the last value it ever saw. A will nobody reads is
-// indistinguishable from no will at all. Reading it off the runtime is what
-// makes that unreachable — the same topic and the same payload
+// showing the last value it ever saw. Reading it off the runtime is what
+// makes that unreachable — the topic every entity reads and the 0 that
 // AnnounceOffline writes.
 //
 // The QoS is asserted too: the will is the one place a publisher.QoS crosses
 // back out to the MQTT client, and it must still be the wire's 0.
-//
-// Mutation check: configuring the runtime with publisher.QoSUnset makes
-// Will().QoS 1 and fails here; a StatusTopic other than BridgeStatusTopic
-// fails the topic assertion and TestBridgeStatusTopicIsOneString.
 func TestWillIsTheRuntimesStatement(t *testing.T) {
 	rig := newBrokerRig(t, nil)
 	will, err := rig.coord.deps.HARuntime.Will()
 	if err != nil {
 		t.Fatalf("Will: %v", err)
 	}
-	if will.Topic != BridgeStatusTopic(rig.root) {
-		t.Errorf("will topic = %q, want %q", will.Topic, BridgeStatusTopic(rig.root))
+	if want := testName + "/connected"; will.Topic != want {
+		t.Errorf("will topic = %q, want %q", will.Topic, want)
 	}
-	if string(will.Payload) != "offline" {
-		t.Errorf("will payload = %q, want \"offline\"", will.Payload)
+	if string(will.Payload) != "0" {
+		t.Errorf("will payload = %q, want \"0\"", will.Payload)
 	}
 	if will.QoS != 0 {
 		t.Errorf("will QoS = %d, want 0", will.QoS)
@@ -274,35 +287,64 @@ func TestWillIsTheRuntimesStatement(t *testing.T) {
 	}
 }
 
-// TestAvailabilityAnnouncementsAreUnchanged pins the two bridge-status
-// publishes byte for byte, because they moved from a hand-written
-// client.Publish to publisher.Runtime.
-//
-// Both are the same three wire values as before: the retained payload
-// "online" or "offline" on <root>/bridge/status at QoS 0. The offline one is
-// published deliberately on a graceful stop, since the Last Will only fires
-// on an ungraceful one — which this bridge got right before the migration and
-// must not lose in it.
-func TestAvailabilityAnnouncementsAreUnchanged(t *testing.T) {
+// TestConnectedFollowsTheUpstream pins `<name>/connected` through a whole
+// life: 1 on connect while nothing upstream has answered, 2 once the backend
+// reports its upstream usable, 1 again when it is lost, 2 again after a
+// broker reconnect that finds it usable, and 0 on a graceful stop. Every
+// value is retained at QoS 0, and an unchanged report publishes nothing.
+func TestConnectedFollowsTheUpstream(t *testing.T) {
 	rig := newBrokerRig(t, nil)
 	ctx := t.Context()
 
 	rig.coord.PublishOnline(ctx)
+	rig.coord.UpstreamUsable(true)
+	rig.coord.UpstreamUsable(true) // unchanged: no publish
+	rig.coord.UpstreamUsable(false)
+	rig.coord.UpstreamUsable(true)
+	rig.coord.PublishOnline(ctx) // a broker reconnect republishes the level
 	rig.coord.PublishOffline(ctx)
 
-	got := rig.broker.publishes()
-	want := []wireRecord{
-		{Topic: "zendure2mqtt/bridge/status", Payload: []byte("online"), QoS: mqtt.QoS0, Retain: true},
-		{Topic: "zendure2mqtt/bridge/status", Payload: []byte("offline"), QoS: mqtt.QoS0, Retain: true},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("wire = %+v, want 2 publishes", got)
-	}
-	for i := range want {
-		if got[i].Topic != want[i].Topic || !bytes.Equal(got[i].Payload, want[i].Payload) ||
-			got[i].QoS != want[i].QoS || got[i].Retain != want[i].Retain {
-			t.Errorf("publish %d = %+v, want %+v", i, got[i], want[i])
+	var got []string
+	for _, w := range rig.broker.publishes() {
+		if w.Topic != testName+"/connected" {
+			continue
 		}
+		if w.QoS != mqtt.QoS0 || !w.Retain {
+			t.Errorf("connected %q published at QoS %d retain %v, want QoS 0 retained", w.Payload, w.QoS, w.Retain)
+		}
+		got = append(got, string(w.Payload))
+	}
+	if want := "1 2 1 2 2 0"; strings.Join(got, " ") != want {
+		t.Errorf("connected = %v, want %s", got, want)
+	}
+}
+
+// TestDeviceReachabilityIsAStatusItem pins `<name>/status/<sn>/online`: a
+// boolean status object, deduplicated on its value, retained.
+func TestDeviceReachabilityIsAStatusItem(t *testing.T) {
+	rig := newBrokerRig(t, nil)
+	topic := testName + "/status/" + rig.dev.SN + "/online"
+
+	rig.coord.DeviceReachable(rig.dev, true)
+	rig.coord.DeviceReachable(rig.dev, true)
+	rig.coord.DeviceReachable(rig.dev, false)
+
+	var vals []any
+	for _, w := range rig.broker.publishes() {
+		if w.Topic != topic {
+			continue
+		}
+		if !w.Retain {
+			t.Errorf("online published without retain")
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(w.Payload, &obj); err != nil {
+			t.Fatalf("online payload %q: %v", w.Payload, err)
+		}
+		vals = append(vals, obj["val"])
+	}
+	if len(vals) != 2 || vals[0] != true || vals[1] != false {
+		t.Errorf("online values = %v, want [true false]", vals)
 	}
 }
 

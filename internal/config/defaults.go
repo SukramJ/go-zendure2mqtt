@@ -16,6 +16,13 @@ const (
 
 	DefaultHASSBaseTopic = "homeassistant"
 
+	// DefaultMQTTMaintenance switches the maintenance topics on, as
+	// mqtt-smarthome 2.0 §7 recommends.
+	DefaultMQTTMaintenance = true
+	// DefaultMQTTStatsInterval is the `<name>/maintenance/stats` period in
+	// seconds.
+	DefaultMQTTStatsInterval = 60
+
 	// DefaultChargeActiveValue / DefaultDischargeActiveValue are the W limits
 	// the virtual switches write when toggled on.
 	DefaultChargeActiveValue    = 1200
@@ -41,8 +48,21 @@ func applyDefaults(c *Config) {
 	if c.MQTTPort == 0 {
 		c.MQTTPort = DefaultMQTTPort
 	}
+	// The identity root is decided before the name is defaulted, because it
+	// is the one place that has to know whether the key was set at all.
 	if c.MQTTTopic == "" {
+		c.identityRoot = LegacyTopicRoot
 		c.MQTTTopic = TopicRoot
+	} else {
+		c.identityRoot = c.MQTTTopic
+	}
+	if c.MQTTMaintenance == nil {
+		v := DefaultMQTTMaintenance
+		c.MQTTMaintenance = &v
+	}
+	if c.MQTTStatsInterval == nil {
+		v := DefaultMQTTStatsInterval
+		c.MQTTStatsInterval = &v
 	}
 	if c.HASSBaseTopic == "" {
 		c.HASSBaseTopic = DefaultHASSBaseTopic

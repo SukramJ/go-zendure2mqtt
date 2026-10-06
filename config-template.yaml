@@ -33,7 +33,17 @@ MQTT_SERVER: localhost
 MQTT_PORT: 1883
 MQTT_LOGIN: ""
 MQTT_PASSWORD: ""
-MQTT_TOPIC: zendure2mqtt
+# Instance name: the first level of every topic (<name>/status/…, <name>/set/…,
+# <name>/connected). Default "zendure". It is the ONLY thing that keeps two
+# instances apart — two bridges on one broker need different names. Leaving it
+# unset keeps the Home Assistant identities of releases before 0.10.0
+# (zendure2mqtt_<sn>_…); setting or changing it re-keys every entity.
+# MQTT_TOPIC: zendure
+# mqtt-smarthome maintenance topics (<name>/maintenance/…): log level, restart
+# and process stats. Anyone who may publish on the broker can use them — secure
+# the broker with ACLs, or set false.
+MQTT_MAINTENANCE: true
+MQTT_STATS_INTERVAL: 60   # seconds between <name>/maintenance/stats; 0 = off
 
 # --- Home Assistant ---
 HASS_ENABLE: true

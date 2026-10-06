@@ -10,6 +10,7 @@ import (
 	hacatalog "github.com/SukramJ/go-ha-catalog"
 	"github.com/SukramJ/go-hamqtt/discovery"
 	hamodel "github.com/SukramJ/go-hamqtt/model"
+	"github.com/SukramJ/go-hamqtt/publisher"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
@@ -46,7 +47,7 @@ import (
 // recorded, not fixed: fixing it would change a published payload inside a
 // step whose whole purpose is to prove one is unchanged.
 func TestSelectWithNoValueMapDivergesFromProduction(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := renderer(t, "en")
 	entry := catalog.Entry{
 		Property: "someMode", Topic: "some_mode", Group: "config",
 		Platform: "select", Name: "Some mode",
@@ -89,7 +90,7 @@ func TestSelectWithNoValueMapDivergesFromProduction(t *testing.T) {
 // that minted an entity for those would add 30-minus-29 entities the pin
 // would report as "not in the pin" without saying why.
 func TestPointsWithoutAnEntryMintNoEntity(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := renderer(t, "en")
 	dev := source.Device{SN: "SF2400AC0012345"}
 
 	noEntry := process.Point{Group: process.GroupMisc, Topic: "softVersion"}
@@ -103,27 +104,144 @@ func TestPointsWithoutAnEntryMintNoEntity(t *testing.T) {
 	}
 }
 
-// TestLayoutHasNoDeviceAvailabilityTopic states F4 rather than leaving it to
-// be inferred from an empty string.
-//
-// This bridge has no per-device availability topic at all: every entity's
-// only availability source is the bridge LWT, so an unreachable device keeps
-// its last values indefinitely while the bridge is up. The Layout has to
-// implement the method — topic.Layout has four — and the honest answer is
-// the empty string, not a topic nothing publishes to.
-//
-// Fixing F4 is additive (a second availability entry per entity, which the
-// library has the vocabulary for) and it is deliberately not this step's
-// business: it changes a published payload.
-func TestLayoutHasNoDeviceAvailabilityTopic(t *testing.T) {
-	layout := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}.Layout()
-	slot := harender.Slot("SF2400AC0012345", process.Point{Group: "now", Topic: "electric_level"})
-
-	if got := layout.Availability(slot); got != "" {
-		t.Errorf("Layout.Availability = %q, want \"\" — this bridge publishes no per-device availability topic (F4)", got)
+// renderer is the renderer of an instance that never set MQTT_TOPIC: topics
+// under the 0.10.0 default name, identities on the pre-0.10.0 root.
+func renderer(t *testing.T, lang string) harender.Renderer {
+	t.Helper()
+	layout, err := harender.NewLayout("zendure")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, want := layout.Bridge(), "zendure2mqtt/bridge/status"; got != want {
-		t.Errorf("Layout.Bridge = %q, want %q", got, want)
+	return harender.Renderer{Topics: layout, IdentityRoot: "zendure2mqtt", Lang: lang}
+}
+
+// TestLayoutRendersTheConventionTopics pins the mqtt-smarthome 2.0 tree
+// (openccu-loom ADR 0083): the function on the second level, the same item
+// path under status and set, the unit's online item and the connected topic.
+func TestLayoutRendersTheConventionTopics(t *testing.T) {
+	layout := renderer(t, "en").Layout()
+	unit := harender.Slot("SF2400AC0012345", process.Point{Group: "now", Topic: "electric_level"})
+	pack := harender.Slot("SF2400AC0012345", process.Point{Group: process.GroupBattery, PackSN: "AO4H2301X01", Topic: "soc_level"})
+
+	for _, c := range []struct{ name, got, want string }{
+		{"state", layout.State(unit), "zendure/status/SF2400AC0012345/now/electric_level"},
+		{"command", layout.Command(unit), "zendure/set/SF2400AC0012345/now/electric_level"},
+		{"pack state", layout.State(pack), "zendure/status/SF2400AC0012345/battery/AO4H2301X01/soc_level"},
+		{"availability", layout.Availability(unit), "zendure/status/SF2400AC0012345/online"},
+		{"pack availability is the unit's", layout.Availability(pack), "zendure/status/SF2400AC0012345/online"},
+		{"bridge", layout.Bridge(), "zendure/connected"},
+		{"connected", layout.Connected(), "zendure/connected"},
+		{"info", layout.Info(), "zendure/info"},
+		{"maintenance", layout.Maintenance("stats"), "zendure/maintenance/stats"},
+		{"command filter", layout.CommandFilter(), "zendure/set/+/+/+"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
+	}
+	if !layout.Conformant() {
+		t.Error("a single-level name reported non-conformant")
+	}
+
+	// A multi-level name is kept verbatim, as MQTT_TOPIC always was, and is
+	// reported outside spec §3; a wildcard is refused.
+	nested, err := harender.NewLayout("home/zendure")
+	if err != nil {
+		t.Fatalf("NewLayout(home/zendure): %v", err)
+	}
+	if nested.Conformant() || nested.Connected() != "home/zendure/connected" {
+		t.Errorf("nested layout: conformant=%v connected=%q", nested.Conformant(), nested.Connected())
+	}
+	if _, err := harender.NewLayout("zen+dure"); err == nil {
+		t.Error("NewLayout accepted a wildcard")
+	}
+}
+
+// TestEntitiesReadTheStatusObject pins what every entity carries under the
+// convention: the value read from `val`, a switch comparing the lowered
+// boolean, a select mapping token to label in German and back, and the two
+// availability entries with mode "all".
+func TestEntitiesReadTheStatusObject(t *testing.T) {
+	dev := source.Device{SN: "SF2400AC0012345", Model: "SolarFlow 2400 AC"}
+	acMode := catalog.Entry{
+		Property: "acMode", Topic: "ac_mode", Group: "config", Platform: "select", Writable: true,
+		ValueMap: map[string]string{"1": "charge", "2": "discharge"}, ValueMapDE: map[string]string{"1": "Laden", "2": "Entladen"},
+	}
+	sw := catalog.Entry{Property: "charge_active", Topic: "charge_active", Group: "config", Platform: "switch", Writable: true}
+	level := catalog.Entry{Property: "electricLevel", Topic: "electric_level", Group: "now", Platform: "sensor", Unit: "%"}
+
+	render := func(lang string, e catalog.Entry) discovery.Component {
+		t.Helper()
+		r := renderer(t, lang)
+		ent, ok := r.Entity(dev, process.Point{Group: e.Group, Topic: e.TopicLeaf(), Entry: &e})
+		if !ok {
+			t.Fatalf("%s minted no entity", e.Topic)
+		}
+		comp, err := discovery.RenderComponent(r.Context(), r.Device(dev, nil, ""), ent, discovery.Origin{})
+		if err != nil {
+			t.Fatalf("RenderComponent: %v", err)
+		}
+		return comp
+	}
+
+	sensor := render("en", level)
+	if sensor.ValueTemplate != discovery.StatusValueTemplate {
+		t.Errorf("sensor value_template = %q", sensor.ValueTemplate)
+	}
+	if sensor.AvailabilityMode != "all" || len(sensor.Availability) != 2 {
+		t.Fatalf("sensor availability = %+v mode %q, want two entries, mode all", sensor.Availability, sensor.AvailabilityMode)
+	}
+	if got := sensor.Availability[0]; got.Topic != "zendure/connected" || got.PayloadAvailable != "online" ||
+		got.ValueTemplate != discovery.ConnectedTemplate(discovery.ConnectedOperational) {
+		t.Errorf("bridge availability = %+v", got)
+	}
+	if got := sensor.Availability[1]; got.Topic != "zendure/status/SF2400AC0012345/online" ||
+		got.PayloadAvailable != "true" || got.ValueTemplate != discovery.StatusBoolValueTemplate {
+		t.Errorf("device availability = %+v", got)
+	}
+	if sensor.AvailabilityTopic != "" {
+		t.Errorf("the flat availability_topic survived: %q", sensor.AvailabilityTopic)
+	}
+
+	sel := render("en", acMode)
+	if sel.ValueTemplate != discovery.StatusValueTemplate || sel.CommandTemplate != "" {
+		t.Errorf("English select templates = %q / %q, want the plain val read (token == label)", sel.ValueTemplate, sel.CommandTemplate)
+	}
+	if strings.Join(sel.Options, ",") != "charge,discharge" {
+		t.Errorf("English options = %v", sel.Options)
+	}
+	selDE := render("de", acMode)
+	if strings.Join(selDE.Options, ",") != "Laden,Entladen" {
+		t.Errorf("German options = %v", selDE.Options)
+	}
+	if !strings.Contains(selDE.ValueTemplate, "Laden") || !strings.Contains(selDE.CommandTemplate, "charge") {
+		t.Errorf("German select must map token<->label: value %q command %q", selDE.ValueTemplate, selDE.CommandTemplate)
+	}
+
+	swc := render("en", sw)
+	fields, _ := swc.Fields.(discovery.SwitchFields)
+	if swc.ValueTemplate != discovery.StatusBoolValueTemplate || fields.PayloadOn != "true" || fields.PayloadOff != "false" {
+		t.Errorf("switch = template %q, fields %+v", swc.ValueTemplate, swc.Fields)
+	}
+}
+
+// TestEnumAcceptsTokensAndLabels is the set half of the token rule: the same
+// enum discovery renders is what the coordinator hands SetValue.Enum, so the
+// token in any case and either language's label resolve to the token.
+func TestEnumAcceptsTokensAndLabels(t *testing.T) {
+	enum := harender.Enum(catalog.Entry{
+		ValueMap: map[string]string{"0": "persist", "1": "volatile"}, ValueMapDE: map[string]string{"0": "dauerhaft", "1": "flüchtig"},
+	})
+	if enum == nil || strings.Join(enum.Codes, ",") != "persist,volatile" {
+		t.Fatalf("Enum codes = %+v", enum)
+	}
+	for _, in := range []string{"volatile", "VOLATILE", "flüchtig"} {
+		if got, err := (publisher.SetValue{Text: in}).Enum(enum, true); err != nil || got != "volatile" {
+			t.Errorf("Enum(%q) = %q, %v", in, got, err)
+		}
+	}
+	if harender.Enum(catalog.Entry{}) != nil {
+		t.Error("an entry without a value map rendered an enum")
 	}
 }
 
@@ -143,7 +261,7 @@ func TestLayoutHasNoDeviceAvailabilityTopic(t *testing.T) {
 // The check uses a bare hamodel.Basic, which is what such an entity would
 // be.
 func TestContextRefusesToGuessAnIdentity(t *testing.T) {
-	ctx := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}.Context()
+	ctx := renderer(t, "en").Context()
 	dev := &hamodel.Device{
 		Identity: hamodel.Identity{IDs: []hamodel.Identifier{{Value: "zendure2mqtt_SF2400AC0012345"}}},
 	}
@@ -160,7 +278,7 @@ func TestContextRefusesToGuessAnIdentity(t *testing.T) {
 		t.Errorf("ObjectID for an entity with no frozen identity = %q, want \"\" (which suppresses the key)", got)
 	}
 	if got := ctx.Availability(dev, stranger); got != nil {
-		t.Errorf("Availability = %v, want nil; this bridge publishes the flat triple instead", got)
+		t.Errorf("Availability = %v, want nil for an entity that binds no slot", got)
 	}
 	if got, want := ctx.NodeID(dev), "zendure2mqtt_SF2400AC0012345"; got != want {
 		t.Errorf("NodeID = %q, want %q", got, want)
@@ -179,8 +297,11 @@ func TestContextRefusesToGuessAnIdentity(t *testing.T) {
 // namespaced "zendure:zendure2mqtt_<sn>" would leave the installed device
 // behind with its area and its name override while the entities moved to a
 // new one.
+//
+// The renderer is the default one, whose topics moved to "zendure" in 0.10.0
+// while the identifiers stay on "zendure2mqtt".
 func TestDeviceBlocksCarryTheInstalledIdentifiers(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := renderer(t, "en")
 	dev := source.Device{
 		SN: "SF2400AC0012345", Model: "SolarFlow 2400 AC", Address: "192.168.1.50",
 	}

@@ -24,34 +24,29 @@
 //
 // # What is deliberately preserved rather than improved
 //
-// Three things the shared library would do differently are held to this
-// bridge's current answer, because the point of the pilot is to prove the
-// runtime on an installed base without also re-keying it:
-//
-//   - Identity. unique_id, default_entity_id, the device identifiers and
-//     via_device all come from [hass.UniqueID], [hass.EntityObjectID] and
-//     [hass.DeviceName] — the production functions, called, not copied. The
-//     library's own defaults would case-fold the serial and seed the entity
-//     id from the topic root instead of the device name, and Home Assistant
-//     has no migration path for any of the three.
-//   - Topics. [Layout] delegates to [process.StateTopic] and
-//     [process.CommandTopic]. topic.Default is not adopted: its Bucket enum
-//     is paramset-shaped (values/master/calculated/custom) and this bridge's
-//     groups (now/config/static/battery/misc) mean something else, so every
-//     slot here carries [hamodel.BucketUnset] and the group travels in
-//     Slot.Path. See the measurement's §5.2.
-//   - Availability. This bridge publishes the flat availability_topic /
-//     payload_available / payload_not_available triple, which Home Assistant
-//     accepts on 28 to 30 of its 32 platforms and which the library types on
-//     [discovery.Component] for exactly this case. [Context.Availability]
-//     therefore returns no availability list at all and [Entity] writes the
-//     three flat keys from its Builder.
+// Identity. unique_id, default_entity_id, the device identifiers and
+// via_device all come from [hass.UniqueID], [hass.EntityObjectID] and
+// [hass.DeviceName] — the production functions, called, not copied — and
+// they are namespaced with [Renderer.IdentityRoot], never with the topic name.
+// The library's own defaults would case-fold the serial and seed the entity id
+// from the topic root instead of the device name, and Home Assistant has no
+// migration path for any of the three. openccu-loom ADR 0083 moved every
+// topic in 0.10.0 and kept every identity, which is why the two roots are
+// separate fields.
 //
 // And the slug is not swapped. [hass.EntityObjectID] stays the source of
 // every entity-id seed even though the library's topic.Slug is the better
 // function, because two of the seeds it produces are pinned defects (F8's
 // pack-serial collision and a dropped "é") and a pinned defect is one whose
 // later fix can be seen.
+//
+// # The topic convention
+//
+// Since 0.10.0 the topics follow mqtt-smarthome 2.0 (ADR 0083): [Layout] is
+// go-hamqtt's topic.SmartHome with this bridge's item path, the state plane
+// publishes `{"val","ts","lc"}` status objects, an enum carries its token on
+// the wire and its label in discovery, and every entity is available while
+// `<name>/connected` is 2 and its unit's `<name>/status/<sn>/online` is true.
 package harender
 
 import (
@@ -73,44 +68,48 @@ const Manufacturer = "Zendure"
 // PackModel is the model string every battery sub-device carries.
 const PackModel = "Battery Pack"
 
-// Availability payloads, as published today on the flat keys.
+// Switch payloads: the plain boolean spellings the status object's `val`
+// renders to through discovery.StatusBoolValueTemplate, and what a `set`
+// accepts back.
 const (
-	PayloadAvailable    = "online"
-	PayloadNotAvailable = "offline"
+	SwitchPayloadOn  = discovery.PayloadTrue
+	SwitchPayloadOff = discovery.PayloadFalse
 )
 
-// Switch payloads. Both virtual switches publish "1"/"0" rather than
-// Home Assistant's ON/OFF default.
-const (
-	SwitchPayloadOn  = "1"
-	SwitchPayloadOff = "0"
-)
-
-// Layout is this bridge's [topic.Layout]: the four methods the shared model
-// asks for, answered by the bridge's own 31-line topic builder.
+// Layout is this bridge's [topic.Layout]: go-hamqtt's mqtt-smarthome 2.0
+// layout with this bridge's item path ([process.Item]) in place of the
+// slot-order one.
 //
-// Writing one is the cheapest part of the migration and it is what keeps the
-// topic schema a decision of this repository — documented in
-// docs/konzept.md and in every user's automations — rather than of the
-// library. State and Command delegate to [process.StateTopic] and
-// [process.CommandTopic] instead of restating the format, so there is one
-// formula and not two.
+//	<name>/status/<sn>/<group>/<topic>            State
+//	<name>/status/<sn>/battery/<packSN>/<topic>   State, battery packs
+//	<name>/set/…                                  Command, same item path
+//	<name>/status/<sn>/online                     Availability, per unit
+//	<name>/connected                              Bridge, 0/1/2
+//
+// Connected, Info and Maintenance are the embedded topic.SmartHome's.
 type Layout struct {
-	// Root is the bridge MQTT topic root, config.MQTTTopic.
-	Root string
+	topic.SmartHome
 }
 
-var _ topic.Layout = Layout{}
+var _ topic.SmartHomeLayout = Layout{}
+
+// NewLayout returns the layout for one instance name. A name spanning several
+// levels is kept verbatim, as every earlier release kept MQTT_TOPIC; such an
+// instance is outside spec §3 and [Layout.Conformant] reports it.
+func NewLayout(name string) (Layout, error) {
+	sh, err := topic.NewSmartHomeMultiLevel(name)
+	if err != nil {
+		return Layout{}, err
+	}
+	return Layout{SmartHome: sh}, nil
+}
 
 // Slot is the coordinate of one resolved point.
 //
 // The mapping is: the unit serial is the address, a battery pack serial is
 // the channel, and the topic group and leaf travel in Path. Bucket stays
-// [hamodel.BucketUnset] — it renders as the empty string and [topic.Join]
-// drops empty segments — because the library's five buckets are paramset
-// names and this bridge's five groups are not the same concept. That is the
-// one place the shared model still smells of the reference consumer, and it
-// costs nothing here.
+// [hamodel.BucketUnset] because the library's five buckets are paramset names
+// and this bridge's five groups are not the same concept; [Layout] ignores it.
 func Slot(sn string, p process.Point) hamodel.Slot {
 	return hamodel.Slot{
 		Address: sn,
@@ -121,7 +120,7 @@ func Slot(sn string, p process.Point) hamodel.Slot {
 }
 
 // pointOf is the inverse of [Slot], so the Layout can hand a coordinate back
-// to the bridge's own topic builder.
+// to the bridge's own item path.
 func pointOf(s hamodel.Slot) process.Point {
 	p := process.Point{PackSN: s.Channel}
 	if len(s.Path) > 0 {
@@ -133,30 +132,44 @@ func pointOf(s hamodel.Slot) process.Point {
 	return p
 }
 
-// State implements [topic.Layout].
+// State implements [topic.Layout]: the point's status item.
 func (l Layout) State(s hamodel.Slot) string {
-	return process.StateTopic(l.Root, s.Address, pointOf(s))
+	return l.Status(process.Item(s.Address, pointOf(s))...)
 }
 
-// Command implements [topic.Layout].
+// Command implements [topic.Layout]: the point's set item, the same path.
 func (l Layout) Command(s hamodel.Slot) string {
-	return process.CommandTopic(l.Root, s.Address, pointOf(s))
+	return l.Set(process.Item(s.Address, pointOf(s))...)
 }
 
-// Availability implements [topic.Layout] and returns the empty string,
-// because this bridge has no per-device availability topic at all: every
-// entity's only availability source is the bridge LWT.
-//
-// That is F4 of the phase-5 measurement — while the bridge is up and a device
-// is unplugged, its entities stay available showing the last value they ever
-// saw — and it is not this step's business to fix. Returning "" states the
-// absence rather than inventing a topic nothing publishes to; nothing in this
-// package calls it, since [Context.Availability] renders no availability list.
-func (Layout) Availability(hamodel.Slot) string { return "" }
+// StateTopic is the status item of one resolved point of unit sn.
+func (l Layout) StateTopic(sn string, p process.Point) string {
+	return l.Status(process.Item(sn, p)...)
+}
 
-// Bridge implements [topic.Layout]: the daemon's own status topic, carrying
-// its LWT, and the topic every entity's flat availability_topic points at.
-func (l Layout) Bridge() string { return l.Root + "/bridge/status" }
+// Availability implements [topic.Layout]: the unit's `online` status item,
+// which a battery pack's entities share — a pack is reached only through its
+// unit.
+func (l Layout) Availability(s hamodel.Slot) string { return l.Online(s.Address) }
+
+// Online is `<name>/status/<sn>/online`, the unit's reachability item.
+func (l Layout) Online(sn string) string {
+	if sn == "" {
+		return ""
+	}
+	return l.Status(sn, "online")
+}
+
+// CommandFilter is the subscription for every unit `set` item,
+// `<name>/set/+/+/+` (`<sn>/<group>/<topic>`).
+//
+// Spelled from the name rather than through Set, which would make the `+`
+// levels topic-safe. A battery pack's six-level set item matches it not,
+// exactly as the old five-level filter did not — F3 of the ADR 0070 phase-5
+// measurement, latent because none of the pack properties is writable.
+func (l Layout) CommandFilter() string {
+	return l.Name() + "/" + topic.FunctionSet + "/+/+/+"
+}
 
 // Renderer builds the shared-model description of this bridge's fleet.
 //
@@ -164,34 +177,40 @@ func (l Layout) Bridge() string { return l.Root + "/bridge/status" }
 // client, no broker, no state. Constructing one has no side effects and
 // calling its methods puts nothing on a wire.
 type Renderer struct {
-	// Root is the bridge MQTT topic root, config.MQTTTopic. It namespaces
-	// every unique_id, which is why changing it orphans every entity (F2).
-	Root string
+	// Topics is the topic layout, built from config.MQTTTopic.
+	Topics Layout
+	// IdentityRoot namespaces every unique_id and device identifier,
+	// config.Config.IdentityRoot: the pre-0.10.0 topic root. Changing it
+	// orphans every entity (F2), which is why it is not the topic name.
+	IdentityRoot string
 	// Lang is the display language, config.Language.
 	Lang string
 }
 
 // Layout returns the topic layout this renderer's context uses.
-func (r Renderer) Layout() Layout { return Layout{Root: r.Root} }
+func (r Renderer) Layout() Layout { return r.Topics }
 
 // Context is the [discovery.Context] for this bridge: the shared library's
 // StdContext with the three identity answers and the availability list
 // overridden.
 func (r Renderer) Context() Context {
 	return Context{
-		Layout: r.Layout(),
-		// Namespace is deliberately empty. StdContext.UniqueID is
-		// overridden and never consulted, and filling this with the
-		// bridge root would contradict the library's own rule that a
-		// unique-id namespace "must be a constant of the bridge, never
-		// configurable" — which this bridge breaks (F2) and which this
-		// step must not appear to endorse.
-		Namespace: "",
-		Lang:      r.Lang,
-		// The state plane publishes a bare scalar, not an envelope, so
-		// no component gets a value_template. Flipping this to
-		// EnvelopeEncoding adds one to all 29 payloads.
-		Enc: discovery.RawEncoding,
+		StdContext: discovery.StdContext{
+			Layout: r.Layout(),
+			// Namespace is deliberately empty. StdContext.UniqueID is
+			// overridden and never consulted, and filling this with the
+			// identity root would contradict the library's own rule that a
+			// unique-id namespace "must be a constant of the bridge, never
+			// configurable" — which this bridge breaks (F2) and which this
+			// package must not appear to endorse.
+			Namespace: "",
+			Lang:      r.Lang,
+			// {"val","ts","lc"}: value_template reads value_json.val, the
+			// switch reads it lowered, and a labelled select maps token to
+			// label and back.
+			Enc: discovery.StatusObjectEncoding,
+		},
+		topics: r.Layout(),
 	}
 }
 
@@ -209,7 +228,7 @@ func (r Renderer) Context() Context {
 // A sub-device is an ordinary device with Via set; nothing in the library
 // special-cases the hierarchy, which is exactly this bridge's pack shape.
 func (r Renderer) Device(dev source.Device, report *model.Report, packSN string) *hamodel.Device {
-	unitID := r.Root + "_" + dev.SN
+	unitID := r.IdentityRoot + "_" + dev.SN
 	out := &hamodel.Device{
 		Name:         hamodel.L(hass.DeviceName(dev, packSN)),
 		Manufacturer: Manufacturer,
@@ -267,11 +286,13 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 		Name:        hamodel.L(e.FriendlyName(r.Lang)),
 		DeviceClass: hamodel.DeviceClass(e.DeviceClass),
 		Unit:        hamodel.Unit(e.Unit),
-		// LevelNone suppresses both the availability list and
-		// availability_mode. Resolved() defaults an empty Availability to
-		// bridge+device with mode "all", and a mode beside an absent list is
-		// the one combination Home Assistant reads as a contradiction.
-		Availability: hamodel.NoAvailability(),
+		// Bridge and device, availability_mode "all": the entity is
+		// available while `<name>/connected` is 2 and its unit's `online`
+		// item is true. [Context.Availability] renders the two entries.
+		Availability: hamodel.Availability{
+			Levels: []hamodel.AvailabilityLevel{hamodel.LevelBridge, hamodel.LevelDevice},
+			Mode:   hamodel.AvailabilityAll,
+		},
 	}
 
 	// Each projection below is gated to the platform the production payload
@@ -285,7 +306,7 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 	case hacatalog.PlatformNumber:
 		desc.Min, desc.Max, desc.Step = e.Min, e.Max, e.Step
 	case hacatalog.PlatformSelect:
-		desc.Options = options(e, r.Lang)
+		desc.Options = Enum(e)
 	default:
 		// The catalog loader accepts exactly five platforms. Three are
 		// answered above and switch is answered in [Entity.BuildDiscovery],
@@ -306,9 +327,8 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 		EntityPlatform: platform,
 		Description:    desc,
 		Binds:          binds,
-		uniqueID:       hass.UniqueID(r.Root, dev.SN, p.PackSN, p.Topic),
+		uniqueID:       hass.UniqueID(r.IdentityRoot, dev.SN, p.PackSN, p.Topic),
 		objectSeed:     hass.EntityObjectID(hass.DeviceName(dev, p.PackSN), p.Topic),
-		availTopic:     r.Layout().Bridge(),
 	}, true
 }
 
@@ -339,30 +359,41 @@ func sensorStateClass(deviceClass, unit string) hacatalog.StateClass {
 	}
 }
 
-// options renders a select's option list as a [hamodel.Enum].
+// Enum renders a value-mapped entry as a [hamodel.Enum]: the codes are the
+// wire tokens ([catalog.Entry.Token], the English value_map entries) and each
+// carries its English label as the default and its German one as a
+// translation.
 //
-// Codes are taken in the catalog's own ascending-code order and only codes
-// that actually carry a label are listed: Entry.Options skips an unlabelled
-// code, while Enum.Label falls back to the code itself, so listing everything
-// would publish a bare number as an option. Returning nil for an entry with
-// no value map is a divergence from production and is recorded as such — see
-// the package's own test — rather than papered over here.
-func options(e catalog.Entry, lang string) *hamodel.Enum {
-	labels := e.Options(lang)
-	if len(labels) == 0 {
+// One enum serves both directions. Discovery lists [hamodel.Enum.Options] in
+// the context's language and, under the status-object encoding, maps token
+// to label and back with the EnumTemplates pair whenever the two differ (the
+// German UI); the coordinator hands the same enum to
+// [publisher.SetValue.Enum], which accepts the token in any case and either
+// language's label.
+//
+// Codes are taken in the catalog's own ascending-code order — the order Home
+// Assistant shows the options in — and nil is returned for an entry with no
+// value map.
+func Enum(e catalog.Entry) *hamodel.Enum {
+	codes := e.Codes()
+	if len(codes) == 0 {
 		return nil
 	}
 	enum := &hamodel.Enum{
-		Codes:  make([]string, 0, len(labels)),
-		Labels: make(map[string]hamodel.Localized, len(labels)),
+		Codes:  make([]string, 0, len(codes)),
+		Labels: make(map[string]hamodel.Localized, len(codes)),
 	}
-	for _, code := range e.Codes() {
-		label, ok := e.Label(code, lang)
+	for _, code := range codes {
+		token, ok := e.Token(code)
 		if !ok {
 			continue
 		}
-		enum.Codes = append(enum.Codes, code)
-		enum.Labels[code] = hamodel.L(label)
+		label := hamodel.L(token)
+		if de, ok := e.Label(code, "de"); ok && de != token {
+			label.Lang = map[string]string{"de": de}
+		}
+		enum.Codes = append(enum.Codes, token)
+		enum.Labels[token] = label
 	}
 	return enum
 }
@@ -370,8 +401,7 @@ func options(e catalog.Entry, lang string) *hamodel.Enum {
 // Entity is one Home Assistant entity of this bridge, in the shared model.
 //
 // It embeds [hamodel.Basic] for the description and the bindings and adds the
-// two identity strings the migration freezes plus the flat availability triple
-// this bridge publishes. The identity strings are fields rather than
+// two identity strings the migration freezes. The identity strings are fields rather than
 // recomputed in [Context] because the context is handed an entity and a
 // device, not a point: the serial, the pack serial and the topic leaf are no
 // longer separable there, and reassembling them from the rendered device
@@ -381,7 +411,6 @@ type Entity struct {
 
 	uniqueID   string
 	objectSeed string
-	availTopic string
 }
 
 var (
@@ -397,24 +426,10 @@ func (e *Entity) HAUniqueID() string { return e.uniqueID }
 func (e *Entity) HAObjectID() string { return e.objectSeed }
 
 // BuildDiscovery writes the keys this bridge publishes that no
-// [hamodel.Description] carries.
-//
-// The flat availability triple is here rather than in the description because
-// the description's availability vocabulary is the list form: a
-// [hamodel.Availability] renders an `availability` array of entries, and this
-// bridge's installed payloads carry availability_topic, payload_available and
-// payload_not_available as three top-level keys. Home Assistant accepts both
-// and the library types both, so preserving the flat form is a choice and not
-// a workaround — changing it would rewrite all 29 retained configs for no
-// operator-visible gain.
-//
-// payload_on/payload_off go through [discovery.SwitchFields] because they are
-// switch-platform keys with no place on a Description, and the two virtual
-// switches publish "1"/"0" rather than Home Assistant's ON/OFF default.
+// [hamodel.Description] carries: a switch's payload_on/payload_off, which are
+// the plain booleans its status object's `val` renders to through the
+// lowered value template.
 func (e *Entity) BuildDiscovery(_ discovery.Context, comp *discovery.Component) error {
-	comp.AvailabilityTopic = e.availTopic
-	comp.PayloadAvailable = PayloadAvailable
-	comp.PayloadNotAvail = PayloadNotAvailable
 	if e.EntityPlatform == hacatalog.PlatformSwitch {
 		comp.Fields = discovery.SwitchFields{
 			PayloadOn:  SwitchPayloadOn,
@@ -432,6 +447,8 @@ func (e *Entity) BuildDiscovery(_ discovery.Context, comp *discovery.Component) 
 // StdContext's, which is the whole point of the embedding.
 type Context struct {
 	discovery.StdContext
+
+	topics Layout
 }
 
 var _ discovery.Context = Context{}
@@ -486,17 +503,24 @@ func (c Context) ObjectID(_ *hamodel.Device, e hamodel.Entity) string {
 	return ""
 }
 
-// Availability returns no availability list, because this bridge publishes
-// the flat triple instead — written by [Entity.BuildDiscovery].
+// Availability returns the two entries every entity of this bridge carries:
+// `<name>/connected` at 2 or above, and the unit's `online` item.
 //
-// Returning nil here rather than leaving StdContext's answer in place is what
-// keeps the two forms from both appearing. A payload carrying an
-// `availability` array *and* availability_topic is not a merge; Home
-// Assistant reads the list and the flat keys become dead weight, so the
-// entity's availability would quietly start coming from a topic this bridge
-// does not publish.
-func (Context) Availability(*hamodel.Device, hamodel.Entity) []discovery.AvailabilityEntry {
-	return nil
+// Overridden rather than left to StdContext, whose device entry addresses
+// the device by its identity (`zendure2mqtt_<sn>`, the discovery device
+// identifier). This bridge's item tree is keyed on the serial, and a
+// battery pack has no reachability of its own — it answers through its unit
+// — so the entry is built from the slot the entity binds instead. The two
+// entries are the library's own, four keys each.
+func (c Context) Availability(_ *hamodel.Device, e hamodel.Entity) []discovery.AvailabilityEntry {
+	binds := e.Bindings()
+	if len(binds) == 0 {
+		return nil
+	}
+	return []discovery.AvailabilityEntry{
+		discovery.ConnectedAvailability(c.topics.Connected(), discovery.ConnectedOperational),
+		discovery.OnlineAvailability(c.topics.Availability(binds[0].Slot), c.Enc),
+	}
 }
 
 // NodeID is the topic segment a device document is published under.
@@ -513,7 +537,7 @@ func (Context) Availability(*hamodel.Device, hamodel.Entity) []discovery.Availab
 //
 // Three properties are required of it and the device identifier has all
 // three. It is stable across restarts, because it is derived from the serial
-// the device reports and from the MQTT root and from nothing else — no
+// the device reports and from the identity root and from nothing else — no
 // counter, no map iteration order, no boot time. It is distinct per device,
 // because the identifier is: a pack's identifier is its unit's plus
 // "_pack_<packSN>". And it is a legal single topic segment, which
@@ -528,8 +552,8 @@ func (Context) Availability(*hamodel.Device, hamodel.Entity) []discovery.Availab
 // "zendure2mqtt_sf2400ac0012345" — the same case-fold the measurement flagged
 // against unique_id. Here it would merely be ugly rather than destructive,
 // since nothing keys on it, but it would also disagree with every other
-// appearance of the serial in this bridge's tree: the state topics come from
-// process.StateTopic, whose serial is verbatim, and so are the identifiers.
+// appearance of the serial in this bridge's tree: the status items come from
+// process.Item, whose serial is verbatim, and so are the identifiers.
 // One spelling of a serial, everywhere. Note also that topic.Slug and the
 // topic.Safe this bridge's own tree uses disagree — one more reason to take
 // neither and keep the identifier.

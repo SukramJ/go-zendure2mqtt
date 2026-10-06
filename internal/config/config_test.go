@@ -105,3 +105,91 @@ func TestExplicitZeroActiveValueRejected(t *testing.T) {
 		t.Errorf("ChargeActiveW() = %d, want default %d", cfg.ChargeActiveW(), config.DefaultChargeActiveValue)
 	}
 }
+
+// TestIdentityRootIsPinnedToThePre010Root pins openccu-loom ADR 0083's guard
+// for this bridge: 0.10.0 changed the default topic name to "zendure", and the
+// Home Assistant identities must not follow it. Unset, the identity root is
+// the old default "zendure2mqtt"; configured, it is the configured value, as
+// it always was.
+func TestIdentityRootIsPinnedToThePre010Root(t *testing.T) {
+	env := fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}
+
+	cfg, err := config.Load(strings.NewReader("CONNECTION: local\n"), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MQTTTopic != "zendure" {
+		t.Errorf("default name = %q, want zendure", cfg.MQTTTopic)
+	}
+	if got := cfg.IdentityRoot(); got != "zendure2mqtt" {
+		t.Errorf("unset IdentityRoot = %q, want zendure2mqtt", got)
+	}
+
+	for _, name := range []string{"zendure2mqtt", "zendure", "garage"} {
+		cfg, err := config.Load(strings.NewReader("MQTT_TOPIC: "+name+"\n"), env)
+		if err != nil {
+			t.Fatalf("Load(%s): %v", name, err)
+		}
+		if cfg.MQTTTopic != name || cfg.IdentityRoot() != name {
+			t.Errorf("configured %q: name %q identity %q, want both %q", name, cfg.MQTTTopic, cfg.IdentityRoot(), name)
+		}
+	}
+
+	// The env override counts as configured.
+	env.vals["ZENDURE_MQTT_TOPIC"] = "keller"
+	cfg, err = config.Load(strings.NewReader(""), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.IdentityRoot() != "keller" {
+		t.Errorf("env-configured IdentityRoot = %q, want keller", cfg.IdentityRoot())
+	}
+}
+
+func TestMQTTTopicRefusesWildcards(t *testing.T) {
+	env := fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}
+	for _, name := range []string{"zen+dure", "zen#", "$SYS", "a//b"} {
+		if _, err := config.Load(strings.NewReader("MQTT_TOPIC: \""+name+"\"\n"), env); err == nil {
+			t.Errorf("MQTT_TOPIC %q accepted", name)
+		}
+	}
+	// A multi-level name is kept, as it always was.
+	if _, err := config.Load(strings.NewReader("MQTT_TOPIC: home/zendure\n"), env); err != nil {
+		t.Errorf("MQTT_TOPIC home/zendure refused: %v", err)
+	}
+}
+
+func TestMaintenanceDefaultsAndOverrides(t *testing.T) {
+	env := fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}
+	cfg, err := config.Load(strings.NewReader(""), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MaintenanceEnabled() || cfg.StatsIntervalSeconds() != config.DefaultMQTTStatsInterval {
+		t.Errorf("defaults: maintenance %v interval %d, want true %d",
+			cfg.MaintenanceEnabled(), cfg.StatsIntervalSeconds(), config.DefaultMQTTStatsInterval)
+	}
+
+	cfg, err = config.Load(strings.NewReader("MQTT_MAINTENANCE: false\nMQTT_STATS_INTERVAL: 0\n"), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaintenanceEnabled() || cfg.StatsIntervalSeconds() != 0 {
+		t.Errorf("file: maintenance %v interval %d, want false 0 (an explicit 0 is off, not the default)",
+			cfg.MaintenanceEnabled(), cfg.StatsIntervalSeconds())
+	}
+
+	env.vals["ZENDURE_MQTT_MAINTENANCE"] = "false"
+	env.vals["ZENDURE_MQTT_STATS_INTERVAL"] = "300"
+	cfg, err = config.Load(strings.NewReader(""), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MaintenanceEnabled() || cfg.StatsIntervalSeconds() != 300 {
+		t.Errorf("env: maintenance %v interval %d, want false 300", cfg.MaintenanceEnabled(), cfg.StatsIntervalSeconds())
+	}
+
+	if _, err := config.Load(strings.NewReader("MQTT_STATS_INTERVAL: -5\n"), fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}); err == nil {
+		t.Error("a negative MQTT_STATS_INTERVAL was accepted")
+	}
+}

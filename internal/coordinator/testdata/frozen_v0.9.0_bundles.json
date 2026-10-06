@@ -1,0 +1,426 @@
+{
+  "homeassistant/device/zendure2mqtt_SF2400AC0012345/config": {
+    "components": {
+      "ac_mode": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/ac_mode/set",
+        "default_entity_id": "select.zendure_sf2400ac0012345_ac_mode",
+        "name": "AC mode",
+        "options": [
+          "charge",
+          "discharge"
+        ],
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "select",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/ac_mode/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_ac_mode"
+      },
+      "battery_voltage": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_battery_voltage",
+        "device_class": "voltage",
+        "name": "Battery voltage",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/battery_voltage/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_battery_voltage",
+        "unit_of_measurement": "V"
+      },
+      "charge_active": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/set",
+        "default_entity_id": "switch.zendure_sf2400ac0012345_charge_active",
+        "name": "Charge active",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "payload_off": "0",
+        "payload_on": "1",
+        "platform": "switch",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/charge_active/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_charge_active"
+      },
+      "charge_max_limit": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_charge_max_limit",
+        "device_class": "power",
+        "name": "Max charge power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/static/charge_max_limit/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_charge_max_limit",
+        "unit_of_measurement": "W"
+      },
+      "discharge_active": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/set",
+        "default_entity_id": "switch.zendure_sf2400ac0012345_discharge_active",
+        "name": "Discharge active",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "payload_off": "0",
+        "payload_on": "1",
+        "platform": "switch",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/discharge_active/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_discharge_active"
+      },
+      "electric_level": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_electric_level",
+        "device_class": "battery",
+        "name": "Battery level",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/electric_level/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
+        "unit_of_measurement": "%"
+      },
+      "grid_input_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_grid_input_power",
+        "device_class": "power",
+        "name": "Grid input power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/grid_input_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_grid_input_power",
+        "unit_of_measurement": "W"
+      },
+      "grid_off_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_grid_off_power",
+        "device_class": "power",
+        "name": "Off-grid output power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/grid_off_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_grid_off_power",
+        "unit_of_measurement": "W"
+      },
+      "input_limit": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/input_limit/set",
+        "default_entity_id": "number.zendure_sf2400ac0012345_input_limit",
+        "max": 2400,
+        "min": 0,
+        "name": "Charge limit",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "number",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/input_limit/state",
+        "step": 100,
+        "unique_id": "zendure2mqtt_SF2400AC0012345_input_limit",
+        "unit_of_measurement": "W"
+      },
+      "inverse_max_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/inverse_max_power/set",
+        "default_entity_id": "number.zendure_sf2400ac0012345_inverse_max_power",
+        "max": 2400,
+        "min": 0,
+        "name": "Max inverter power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "number",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/inverse_max_power/state",
+        "step": 100,
+        "unique_id": "zendure2mqtt_SF2400AC0012345_inverse_max_power",
+        "unit_of_measurement": "W"
+      },
+      "min_soc": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/min_soc/set",
+        "default_entity_id": "number.zendure_sf2400ac0012345_min_soc",
+        "max": 50,
+        "min": 0,
+        "name": "Discharge limit SoC",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "number",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/min_soc/state",
+        "step": 1,
+        "unique_id": "zendure2mqtt_SF2400AC0012345_min_soc",
+        "unit_of_measurement": "%"
+      },
+      "output_home_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_output_home_power",
+        "device_class": "power",
+        "name": "Home output power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/output_home_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_output_home_power",
+        "unit_of_measurement": "W"
+      },
+      "output_limit": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/output_limit/set",
+        "default_entity_id": "number.zendure_sf2400ac0012345_output_limit",
+        "max": 2400,
+        "min": 0,
+        "name": "Discharge limit",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "number",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/output_limit/state",
+        "step": 100,
+        "unique_id": "zendure2mqtt_SF2400AC0012345_output_limit",
+        "unit_of_measurement": "W"
+      },
+      "output_pack_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_output_pack_power",
+        "device_class": "power",
+        "name": "Battery charge power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/output_pack_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_output_pack_power",
+        "unit_of_measurement": "W"
+      },
+      "pack_count": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_count",
+        "name": "Battery pack count",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/static/pack_count/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count"
+      },
+      "pack_input_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_input_power",
+        "device_class": "power",
+        "name": "Battery discharge power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/pack_input_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_input_power",
+        "unit_of_measurement": "W"
+      },
+      "remain_out_time": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_remain_out_time",
+        "device_class": "duration",
+        "name": "Remaining discharge time",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/remain_out_time/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_remain_out_time",
+        "unit_of_measurement": "min"
+      },
+      "rssi": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_rssi",
+        "device_class": "signal_strength",
+        "name": "Wi-Fi signal",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/static/rssi/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_rssi",
+        "unit_of_measurement": "dBm"
+      },
+      "smart_mode": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/smart_mode/set",
+        "default_entity_id": "select.zendure_sf2400ac0012345_smart_mode",
+        "name": "Smart mode",
+        "options": [
+          "persist",
+          "volatile"
+        ],
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "select",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/smart_mode/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_smart_mode"
+      },
+      "soc_set": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "command_topic": "zendure2mqtt/SF2400AC0012345/config/soc_set/set",
+        "default_entity_id": "number.zendure_sf2400ac0012345_soc_set",
+        "max": 100,
+        "min": 70,
+        "name": "Charge limit SoC",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "number",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/config/soc_set/state",
+        "step": 1,
+        "unique_id": "zendure2mqtt_SF2400AC0012345_soc_set",
+        "unit_of_measurement": "%"
+      },
+      "solar_input_power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_solar_input_power",
+        "device_class": "power",
+        "name": "Solar input power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/solar_input_power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_solar_input_power",
+        "unit_of_measurement": "W"
+      },
+      "temperature": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_temperature",
+        "device_class": "temperature",
+        "name": "Enclosure temperature",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/now/temperature/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_temperature",
+        "unit_of_measurement": "°C"
+      }
+    },
+    "device": {
+      "configuration_url": "http://192.168.1.50",
+      "identifiers": [
+        "zendure2mqtt_SF2400AC0012345"
+      ],
+      "manufacturer": "Zendure",
+      "model": "SolarFlow 2400 AC",
+      "model_id": "solarFlow2400AC",
+      "name": "Zendure SF2400AC0012345",
+      "serial_number": "SF2400AC0012345"
+    },
+    "origin": {
+      "name": "go-zendure2mqtt"
+    }
+  },
+  "homeassistant/device/zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01/config": {
+    "components": {
+      "current": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_current",
+        "device_class": "current",
+        "name": "Pack current",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/current/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current",
+        "unit_of_measurement": "A"
+      },
+      "max_cell_voltage": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_max_cell_voltage",
+        "device_class": "voltage",
+        "name": "Max cell voltage",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/max_cell_voltage/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage",
+        "unit_of_measurement": "V"
+      },
+      "max_temp": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_max_temp",
+        "device_class": "temperature",
+        "name": "Pack max temperature",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/max_temp/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp",
+        "unit_of_measurement": "°C"
+      },
+      "min_cell_voltage": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_min_cell_voltage",
+        "device_class": "voltage",
+        "name": "Min cell voltage",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/min_cell_voltage/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage",
+        "unit_of_measurement": "V"
+      },
+      "power": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_power",
+        "device_class": "power",
+        "name": "Pack power",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/power/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power",
+        "unit_of_measurement": "W"
+      },
+      "soc_level": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_soc_level",
+        "device_class": "battery",
+        "name": "Pack SoC",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/soc_level/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level",
+        "unit_of_measurement": "%"
+      },
+      "total_voltage": {
+        "availability_topic": "zendure2mqtt/bridge/status",
+        "default_entity_id": "sensor.zendure_sf2400ac0012345_pack_ao4h2301x01_total_voltage",
+        "device_class": "voltage",
+        "name": "Pack voltage",
+        "payload_available": "online",
+        "payload_not_available": "offline",
+        "platform": "sensor",
+        "state_class": "measurement",
+        "state_topic": "zendure2mqtt/SF2400AC0012345/battery/AO4H2301X01/total_voltage/state",
+        "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage",
+        "unit_of_measurement": "V"
+      }
+    },
+    "device": {
+      "identifiers": [
+        "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01"
+      ],
+      "manufacturer": "Zendure",
+      "model": "Battery Pack",
+      "name": "Zendure SF2400AC0012345 Pack AO4H2301X01",
+      "serial_number": "AO4H2301X01",
+      "sw_version": "4109",
+      "via_device": "zendure2mqtt_SF2400AC0012345"
+    },
+    "origin": {
+      "name": "go-zendure2mqtt"
+    }
+  }
+}

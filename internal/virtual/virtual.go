@@ -27,13 +27,9 @@ func (s Switch) FriendlyName(lang string) string {
 	return s.Name
 }
 
-// State returns "1"/"0" derived from the report (HA switch payload_on/off).
-func (s Switch) State(r *model.Report) string {
-	if s.active(r) {
-		return "1"
-	}
-	return "0"
-}
+// State reports whether the switch is on, derived from the report. It is
+// published as a JSON boolean, `{"val": true, …}`.
+func (s Switch) State(r *model.Report) bool { return s.active(r) }
 
 // WriteProps returns the property set to write for the requested state.
 func (s Switch) WriteProps(on bool) map[string]any {

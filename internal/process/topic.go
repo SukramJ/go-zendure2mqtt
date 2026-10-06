@@ -3,29 +3,19 @@
 
 package process
 
-import "strings"
-
-// StateTopic returns the MQTT topic a point's value is published to:
+// Item returns a point's mqtt-smarthome item path, the levels below
+// `<name>/status/` and `<name>/set/`:
 //
-//	<root>/<sn>/<group>/<topic>/state
-//	<root>/<sn>/battery/<packSN>/<topic>/state   (battery pack values)
-func StateTopic(root, sn string, p Point) string {
-	return topicBase(root, sn, p) + "/state"
-}
-
-// CommandTopic returns the MQTT topic a writable point listens on for
-// commands (Home Assistant / manual writes): the state topic with a /set
-// suffix instead of /state.
-func CommandTopic(root, sn string, p Point) string {
-	return topicBase(root, sn, p) + "/set"
-}
-
-// topicBase builds the shared prefix (without the /state|/set leaf).
-func topicBase(root, sn string, p Point) string {
-	parts := []string{root, sn, p.Group}
+//	<sn>/<group>/<topic>
+//	<sn>/battery/<packSN>/<topic>   (battery pack values)
+//
+// It is the one formula of this bridge's item tree; internal/harender turns it
+// into topics through go-hamqtt's topic.SmartHome, which makes every level
+// topic-safe.
+func Item(sn string, p Point) []string {
+	parts := []string{sn, p.Group}
 	if p.PackSN != "" {
 		parts = append(parts, p.PackSN)
 	}
-	parts = append(parts, p.Topic)
-	return strings.Join(parts, "/")
+	return append(parts, p.Topic)
 }

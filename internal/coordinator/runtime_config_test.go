@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SukramJ/go-hamqtt/discovery"
 	"github.com/SukramJ/go-hamqtt/publisher"
 	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
 
@@ -34,14 +35,21 @@ import (
 // the daemon's own statement. Bypassing HARuntimeConfig at a construction
 // site instead is what [New]'s guard below refuses.
 func TestHARuntimeConfigIsTheOnlySpelling(t *testing.T) {
-	cfg := &config.Config{HASSBaseTopic: "ha-discovery", MQTTTopic: "zendure2mqtt"}
+	cfg := testConfig(t, "en")
+	cfg.HASSBaseTopic = "ha-discovery"
 	got := HARuntimeConfig(cfg, discardLogger())
 
 	if got.Prefix != cfg.HASSBaseTopic {
 		t.Errorf("Prefix = %q, want the operator's HASS_BASE_TOPIC %q", got.Prefix, cfg.HASSBaseTopic)
 	}
-	if want := BridgeStatusTopic(cfg.MQTTTopic); got.StatusTopic != want {
-		t.Errorf("StatusTopic = %q, want %q", got.StatusTopic, want)
+	// The layout states the status topic: `<name>/connected`, filled from
+	// Layout.Bridge by the library, which refuses a StatusTopic that
+	// disagrees with it.
+	if got.Layout == nil || got.Layout.Bridge() != testName+"/connected" {
+		t.Errorf("Layout = %v, want the mqtt-smarthome layout of %q", got.Layout, testName)
+	}
+	if got.StatusTopic != "" {
+		t.Errorf("StatusTopic = %q, want it left to the layout", got.StatusTopic)
 	}
 	if got.QoS != publisher.QoSAtMostOnce {
 		t.Errorf("QoS = %v, want QoSAtMostOnce — the zero value means unset and resolves to QoS 1", got.QoS)
@@ -74,7 +82,7 @@ func TestHARuntimeConfigIsTheOnlySpelling(t *testing.T) {
 func TestNewRefusesARuntimeThatBypassesHARuntimeConfig(t *testing.T) {
 	pub := &capturingClient{}
 	deps := func(rt *publisher.Runtime) Deps {
-		cfg := &config.Config{HASSBaseTopic: "homeassistant", MQTTTopic: "zendure2mqtt"}
+		cfg := testConfig(t, "en")
 		return Deps{
 			Cfg:        cfg,
 			Backend:    &goldenBackend{},
@@ -90,10 +98,10 @@ func TestNewRefusesARuntimeThatBypassesHARuntimeConfig(t *testing.T) {
 		// Exactly the mutation: a runtime built by hand, correct in every
 		// other field, with LegacyEntityTopics left off.
 		rt := publisher.New(hagomqtt.Transport(pub), publisher.Config{
-			Prefix:      "homeassistant",
-			StatusTopic: BridgeStatusTopic("zendure2mqtt"),
-			QoS:         publisher.QoSAtMostOnce,
-			Logger:      discardLogger(),
+			Prefix: "homeassistant",
+			Layout: Layout(testName),
+			QoS:    publisher.QoSAtMostOnce,
+			Logger: discardLogger(),
 		})
 		defer rt.Close()
 		defer func() {
@@ -127,8 +135,7 @@ func TestNewRefusesARuntimeThatBypassesHARuntimeConfig(t *testing.T) {
 	})
 
 	t.Run("built with HARuntimeConfig", func(t *testing.T) {
-		cfg := &config.Config{HASSBaseTopic: "homeassistant", MQTTTopic: "zendure2mqtt"}
-		rt := publisher.New(hagomqtt.Transport(pub), HARuntimeConfig(cfg, discardLogger()))
+		rt := publisher.New(hagomqtt.Transport(pub), HARuntimeConfig(testConfig(t, "en"), discardLogger()))
 		defer rt.Close()
 		if New(deps(rt)) == nil {
 			t.Fatal("New returned nil")
@@ -150,7 +157,7 @@ func TestWantLegacyFormsIsDerived(t *testing.T) {
 		t.Fatal("wantLegacyForms is empty")
 	}
 	probe := publisher.New(nopTransport{},
-		HARuntimeConfig(&config.Config{}, slog.New(slog.DiscardHandler)))
+		HARuntimeConfig(&config.Config{MQTTTopic: "other"}, slog.New(slog.DiscardHandler)))
 	defer probe.Close()
 	if got := probe.LegacyForms(); !slices.Equal(got, want) {
 		t.Errorf("wantLegacyForms = %v, want %v", want, got)
@@ -168,14 +175,17 @@ func TestWantLegacyFormsIsDerived(t *testing.T) {
 //
 // Mutation check: dropping either field from HAStateConfig fails here.
 func TestHAStateConfigStatesBothQoSFields(t *testing.T) {
-	got := HAStateConfig("zendure2mqtt", discardLogger())
+	got := HAStateConfig(testName, discardLogger())
 	if got.QoS != publisher.QoSAtMostOnce {
 		t.Errorf("QoS = %v, want QoSAtMostOnce", got.QoS)
 	}
 	if got.PulseQoS != publisher.QoSAtMostOnce {
 		t.Errorf("PulseQoS = %v, want QoSAtMostOnce stated, not left to coincide with the default", got.PulseQoS)
 	}
-	if want := []string{CommandFilter("zendure2mqtt")}; !slices.Equal(got.CommandFilters, want) {
+	if want := []string{CommandFilter(testName)}; !slices.Equal(got.CommandFilters, want) {
 		t.Errorf("CommandFilters = %v, want %v", got.CommandFilters, want)
+	}
+	if got.Encoding != discovery.StatusObjectEncoding {
+		t.Errorf("Encoding = %v, want the mqtt-smarthome status object", got.Encoding)
 	}
 }

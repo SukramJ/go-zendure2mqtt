@@ -19,8 +19,15 @@ import "time"
 const (
 	// MQTTClientID is the client id the bridge connects to the broker with.
 	MQTTClientID = "zendure2mqtt"
-	// TopicRoot is the default MQTT topic root (overridable via MQTT_TOPIC).
-	TopicRoot = "zendure2mqtt"
+	// TopicRoot is the default instance name, the first level of every topic
+	// (overridable via MQTT_TOPIC). mqtt-smarthome 2.0 §3 asks for a short
+	// adapter word, openccu-loom ADR 0083 names it.
+	TopicRoot = "zendure"
+	// LegacyTopicRoot is the default topic root of every release before
+	// 0.10.0. It is still the Home Assistant identity root of an instance that
+	// leaves MQTT_TOPIC unset — see [Config.IdentityRoot] — and the root the
+	// migration sweep clears the old layout under.
+	LegacyTopicRoot = "zendure2mqtt"
 	// EnvPrefix is the environment-variable override prefix.
 	EnvPrefix = "ZENDURE_"
 	// AppDirName is the per-user config directory name under XDG.
@@ -79,7 +86,21 @@ type Config struct {
 	MQTTPort     int    `yaml:"MQTT_PORT"`
 	MQTTLogin    string `yaml:"MQTT_LOGIN"`
 	MQTTPassword string `yaml:"MQTT_PASSWORD"`
-	MQTTTopic    string `yaml:"MQTT_TOPIC"`
+	// MQTTTopic is the instance name, `<name>` in `<name>/status/…`. It is
+	// the only thing that keeps two instances on one broker apart.
+	MQTTTopic string `yaml:"MQTT_TOPIC"`
+	// MQTTMaintenance enables the mqtt-smarthome maintenance topics
+	// (`<name>/maintenance/…`: log level, restart, stats). A pointer so an
+	// omitted key takes the default (on) while an explicit false is kept.
+	MQTTMaintenance *bool `yaml:"MQTT_MAINTENANCE"`
+	// MQTTStatsInterval is the period of `<name>/maintenance/stats` in
+	// seconds; 0 switches the topic off. A pointer for the same reason as
+	// MQTTMaintenance: an explicit 0 must not become the default.
+	MQTTStatsInterval *int `yaml:"MQTT_STATS_INTERVAL"`
+
+	// identityRoot is the root every Home Assistant unique_id and device
+	// identifier is namespaced with. Not a config key: see [Config.IdentityRoot].
+	identityRoot string
 
 	// --- Home Assistant ---
 	HASSEnable    bool   `yaml:"HASS_ENABLE"`
@@ -106,6 +127,40 @@ type Config struct {
 
 	// --- Misc ---
 	Debug bool `yaml:"DEBUG"`
+}
+
+// IdentityRoot is the root the Home Assistant identities — every unique_id,
+// device identifier and discovery node id — are built from.
+//
+// It is the topic root every release before 0.10.0 used, which is what those
+// identities were minted with: the configured MQTT_TOPIC, or
+// [LegacyTopicRoot] when the key is unset. 0.10.0 changed the default *name*
+// to [TopicRoot] and that moves topics only; Home Assistant has no migration
+// for a unique_id, so an identity built from the new default would orphan
+// every entity of every installation that never set the key.
+//
+// A config that did not come through [Load] falls back to MQTTTopic, which is
+// the pre-0.10.0 rule.
+func (c *Config) IdentityRoot() string {
+	if c.identityRoot != "" {
+		return c.identityRoot
+	}
+	return c.MQTTTopic
+}
+
+// MaintenanceEnabled reports whether the maintenance topics are on (the
+// default).
+func (c *Config) MaintenanceEnabled() bool {
+	return c.MQTTMaintenance == nil || *c.MQTTMaintenance
+}
+
+// StatsIntervalSeconds returns MQTT_STATS_INTERVAL, or the default when unset.
+// 0 means off.
+func (c *Config) StatsIntervalSeconds() int {
+	if c.MQTTStatsInterval == nil {
+		return DefaultMQTTStatsInterval
+	}
+	return *c.MQTTStatsInterval
 }
 
 // IsCloud reports whether the cloud transport is selected.

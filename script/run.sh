@@ -38,7 +38,19 @@ else
   export ZENDURE_MQTT_SERVER="core-mosquitto"
   export ZENDURE_MQTT_PORT="1883"
 fi
-export ZENDURE_MQTT_TOPIC="$(bashio::config 'mqtt_topic')"
+# An empty mqtt_topic leaves MQTT_TOPIC unset: the daemon then publishes under
+# its default name (zendure) and keeps the Home Assistant identities on the
+# pre-0.10.0 root (zendure2mqtt). A stored value — every install before 0.10.0
+# had zendure2mqtt saved — is passed through verbatim.
+if bashio::config.has_value 'mqtt_topic'; then
+  export ZENDURE_MQTT_TOPIC="$(bashio::config 'mqtt_topic')"
+fi
+export ZENDURE_MQTT_MAINTENANCE="$(bashio::config 'mqtt_maintenance')"
+export ZENDURE_MQTT_STATS_INTERVAL="$(bashio::config 'mqtt_stats_interval')"
+# The Supervisor does not restart an add-on that exits cleanly, so the
+# maintenance restart would be a stop. /.dockerenv would otherwise make the
+# daemon believe it is supervised; restart the add-on from Home Assistant.
+export ZENDURE_SUPERVISED=0
 
 # --- Home Assistant discovery ---
 export ZENDURE_HASS_ENABLE="$(bashio::config 'hass_enable')"

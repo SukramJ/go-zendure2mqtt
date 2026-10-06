@@ -82,7 +82,7 @@ func (r stubRenderer) Bundle(
 		b.Components[p.Topic] = discovery.Component{
 			Platform:   hacatalog.Platform(p.Entry.Platform),
 			UniqueID:   UniqueID(r.root, dev.SN, packSN, p.Topic),
-			StateTopic: process.StateTopic(r.root, dev.SN, p),
+			StateTopic: r.root + "/status/" + strings.Join(process.Item(dev.SN, p), "/"),
 		}
 	}
 	if len(b.Components) == 0 {
@@ -92,7 +92,7 @@ func (r stubRenderer) Bundle(
 }
 
 func newDisc(pub BundleWriter) *Discovery {
-	return New("homeassistant", "zendure", stubRenderer{root: "zendure"}, pub, nil)
+	return New("homeassistant", "zendure", "zendure", stubRenderer{root: "zendure"}, pub, nil)
 }
 
 func sensorPoint(topic, group string) process.Point {
@@ -142,6 +142,31 @@ func TestIsOwnConfig(t *testing.T) {
 			`{"components":{"a":{"unique_id":"zendure_HOA1_a","state_topic":"zendure/HOA1/now/a/state"},"b":{"unique_id":"other_thing","state_topic":"other/thing"}}}`,
 			false,
 		},
+	}
+	for _, c := range cases {
+		if got := d.IsOwnConfig([]byte(c.payload)); got != c.want {
+			t.Errorf("%s: IsOwnConfig = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestIsOwnConfigAcrossTheNameChange covers an instance that never set
+// MQTT_TOPIC: 0.10.0 publishes under the name "zendure" while every identity
+// stays on "zendure2mqtt". A retained config of either release must be owned —
+// the old one names a state topic under the old root, the new one under the
+// name — and a config whose unique_id is in the name's namespace is not this
+// instance's: it would be a sibling that set MQTT_TOPIC: zendure.
+func TestIsOwnConfigAcrossTheNameChange(t *testing.T) {
+	d := New("homeassistant", "zendure", "zendure2mqtt", stubRenderer{root: "zendure"}, &stubPub{}, nil)
+	cases := []struct {
+		name    string
+		payload string
+		want    bool
+	}{
+		{"0.9 config", `{"unique_id":"zendure2mqtt_HOA1_x","state_topic":"zendure2mqtt/HOA1/now/x/state"}`, true},
+		{"0.10 config", `{"unique_id":"zendure2mqtt_HOA1_x","state_topic":"zendure/status/HOA1/now/x"}`, true},
+		{"sibling named zendure", `{"unique_id":"zendure_HOA1_x","state_topic":"zendure/status/HOA1/now/x"}`, false},
+		{"foreign state root", `{"unique_id":"zendure2mqtt_HOA1_x","state_topic":"other/HOA1/x"}`, false},
 	}
 	for _, c := range cases {
 		if got := d.IsOwnConfig([]byte(c.payload)); got != c.want {
@@ -352,7 +377,7 @@ func TestForgetReopensTheGuardForOneDocument(t *testing.T) {
 // would be claimed against the sweep while the broker holds nothing.
 func TestRenderFailureIsReportedAndNotPublished(t *testing.T) {
 	pub := &stubPub{}
-	d := New("homeassistant", "zendure", stubRenderer{root: "zendure", err: errors.New("boom")}, pub, nil)
+	d := New("homeassistant", "zendure", "zendure", stubRenderer{root: "zendure", err: errors.New("boom")}, pub, nil)
 	published := d.Publish(context.Background(), source.Device{SN: "HOA1"}, nil,
 		[]process.Point{sensorPoint("electric_level", "now")})
 	if len(published) != 0 || pub.calls != 0 {
@@ -381,7 +406,7 @@ func TestBundlePublishedIsLoggedWithTheWholeTopic(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	pub := &stubPub{}
-	d := New("ha-discovery", "zendure", stubRenderer{root: "zendure"}, pub, logger)
+	d := New("ha-discovery", "zendure", "zendure", stubRenderer{root: "zendure"}, pub, logger)
 	dev := source.Device{SN: "HOA1", Model: "SolarFlow 2400 AC"}
 	d.Publish(context.Background(), dev, &model.Report{}, []process.Point{
 		sensorPoint("electric_level", "now"),

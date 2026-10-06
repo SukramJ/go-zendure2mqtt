@@ -77,11 +77,12 @@ type BundleRenderer interface {
 // unique_id triggers one publish of its device's document per process
 // lifetime).
 type Discovery struct {
-	base   string // HA discovery root, e.g. "homeassistant"
-	root   string // bridge MQTT topic root, e.g. "zendure2mqtt"
-	render BundleRenderer
-	pub    BundleWriter
-	logger *slog.Logger
+	base     string // HA discovery root, e.g. "homeassistant"
+	name     string // instance name, the first topic level, e.g. "zendure"
+	identity string // identity root every unique_id is namespaced with, e.g. "zendure2mqtt"
+	render   BundleRenderer
+	pub      BundleWriter
+	logger   *slog.Logger
 
 	mu sync.Mutex
 	// sent records the unique_ids whose device document has been published
@@ -98,13 +99,16 @@ type Discovery struct {
 	byTopic map[string][]string
 }
 
-// New constructs a Discovery publisher.
-func New(base, root string, render BundleRenderer, pub BundleWriter, logger *slog.Logger) *Discovery {
+// New constructs a Discovery publisher. name is the instance name
+// (config.MQTTTopic) and identity the root the unique_ids are namespaced with
+// (config.Config.IdentityRoot); the two differ on an instance that never set
+// MQTT_TOPIC.
+func New(base, name, identity string, render BundleRenderer, pub BundleWriter, logger *slog.Logger) *Discovery {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Discovery{
-		base: base, root: root, render: render, pub: pub, logger: logger,
+		base: base, name: name, identity: identity, render: render, pub: pub, logger: logger,
 		sent: map[string]bool{}, byTopic: map[string][]string{},
 	}
 }
@@ -252,10 +256,13 @@ func (d *Discovery) Forget(configTopics []string) {
 // history, its name override, its icon, its area and its automations when its
 // config moves from a per-entity topic into a device document.
 //
-// Note that root is config.MQTTTopic and therefore operator-configurable,
-// which is F2 of the phase-5 measurement: changing it re-keys every entity.
-// That defect is preserved here deliberately — this function is a record of
-// what is published today, not of what should be.
+// Note that root is config.Config.IdentityRoot — the configured MQTT_TOPIC,
+// or "zendure2mqtt" when it is unset — and therefore operator-configurable,
+// which is F2 of the phase-5 measurement: changing MQTT_TOPIC re-keys every
+// entity. That defect is preserved here deliberately — this function is a
+// record of what is published, not of what should be. 0.10.0 moved the
+// default topic name to "zendure" and kept this root where it was, so the
+// new default moves topics and not identities.
 func UniqueID(root, sn, packSN, topicLeaf string) string {
 	if packSN != "" {
 		return fmt.Sprintf("%s_%s_pack_%s_%s", root, sn, packSN, topicLeaf)

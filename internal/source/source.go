@@ -72,3 +72,25 @@ type Backend interface {
 	Source
 	Controller
 }
+
+// Observer is told what a backend knows about its upstream: whether the
+// upstream as a whole is usable, and whether each device answers. The
+// coordinator implements it and turns it into mqtt-smarthome's
+// `<name>/connected` (1 or 2) and `<name>/status/<sn>/online`.
+//
+// Both methods are called on the backend's own goroutines, repeatedly and
+// with unchanged values; an implementation must be cheap and idempotent.
+type Observer interface {
+	// UpstreamUsable reports whether the backend can currently reach the
+	// thing it bridges: for the cloud, its MQTT session; for the local
+	// transport, at least one device that answered its latest poll.
+	UpstreamUsable(usable bool)
+	// DeviceReachable reports whether dev answered its latest attempt.
+	DeviceReachable(dev Device, reachable bool)
+}
+
+// Observable is a backend that reports to an [Observer]. Observe is called
+// once, before Run.
+type Observable interface {
+	Observe(o Observer)
+}

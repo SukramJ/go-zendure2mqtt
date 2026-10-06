@@ -124,7 +124,7 @@ func cmdResolve(args []string) error {
 	fs := flag.NewFlagSet("resolve", flag.ExitOnError)
 	host := fs.String("host", "", "device IP or hostname")
 	catalogPath := fs.String("catalog", "zendure.yaml", "path to the property catalog")
-	lang := fs.String("lang", "en", "label language (en|de)")
+	lang := fs.String("lang", "en", "language of the enum labels shown beside their tokens (en|de)")
 	_ = fs.Parse(args)
 	if *host == "" {
 		return fmt.Errorf("--host is required")
@@ -139,7 +139,7 @@ func cmdResolve(args []string) error {
 	if err != nil {
 		return err
 	}
-	points := process.Resolve(rep, cat, *lang)
+	points := process.Resolve(rep, cat)
 	sort.Slice(points, func(i, j int) bool {
 		if points[i].Group != points[j].Group {
 			return points[i].Group < points[j].Group
@@ -154,6 +154,14 @@ func cmdResolve(args []string) error {
 		}
 		if p.Entry == nil {
 			suffix += "  (unmapped)"
+		} else if token, ok := p.Value.(string); ok {
+			// An enum publishes its token; show the label Home Assistant
+			// will display for it.
+			if code, ok := p.Entry.CodeForToken(token); ok {
+				if label, ok := p.Entry.Label(code, *lang); ok && label != token {
+					suffix += "  (" + label + ")"
+				}
+			}
 		}
 		fmt.Printf("  %-8s %-22s = %v%s\n", p.Group, p.Topic, p.Value, suffix)
 	}

@@ -83,17 +83,17 @@ func TestMQTTSessionSubscribeBypassesBreaker(t *testing.T) {
 	_ = session.Publish(t.Context(), "t", nil, mqtt.QoS0, false)
 	_ = session.Publish(t.Context(), "t", nil, mqtt.QoS0, false)
 
-	if _, err := session.Subscribe(t.Context(), "zendure/+/+/+/set", mqtt.QoS0, func(*mqtt.Message) {}); err != nil {
+	if _, err := session.Subscribe(t.Context(), "zendure/set/+/+/+", mqtt.QoS0, func(*mqtt.Message) {}); err != nil {
 		t.Fatalf("subscribe with open circuit: %v", err)
 	}
-	if err := session.Unsubscribe(t.Context(), "zendure/+/+/+/set"); err != nil {
+	if err := session.Unsubscribe(t.Context(), "zendure/set/+/+/+"); err != nil {
 		t.Fatalf("unsubscribe with open circuit: %v", err)
 	}
-	if len(sub.subscribed) != 1 || sub.subscribed[0] != "zendure/+/+/+/set" {
-		t.Fatalf("subscriber saw %v, want [zendure/+/+/+/set]", sub.subscribed)
+	if len(sub.subscribed) != 1 || sub.subscribed[0] != "zendure/set/+/+/+" {
+		t.Fatalf("subscriber saw %v, want [zendure/set/+/+/+]", sub.subscribed)
 	}
-	if len(sub.unsubscribed) != 1 || sub.unsubscribed[0] != "zendure/+/+/+/set" {
-		t.Fatalf("unsubscriber saw %v, want [zendure/+/+/+/set]", sub.unsubscribed)
+	if len(sub.unsubscribed) != 1 || sub.unsubscribed[0] != "zendure/set/+/+/+" {
+		t.Fatalf("unsubscriber saw %v, want [zendure/set/+/+/+]", sub.unsubscribed)
 	}
 }
 
@@ -103,18 +103,17 @@ func TestMQTTSessionSubscribeBypassesBreaker(t *testing.T) {
 // It exists for an ordering constraint that is real and not incidental: the
 // Last Will is part of CONNECT, so the MQTT client has to be constructed with
 // it, while the will itself is publisher.Runtime's answer — Will() returns
-// the same topic and the same payload AnnounceOnline and AnnounceOffline
-// write, which is what keeps this bridge from configuring a will no published
-// entity references. The runtime is therefore built first, over a transport
+// `<name>/connected` with 0, the topic AnnounceOnline and AnnounceOffline
+// write and every entity's availability reads, which is what keeps this
+// bridge from configuring a will no published entity references. The runtime is therefore built first, over a transport
 // whose client arrives a few lines later.
 //
 // What is deliberately NOT covered here: that run() actually uses Will()'s
 // values rather than a literal of its own. run() is a composition root in a
 // main package — it dials a broker and blocks — and no test can construct it.
-// The guarantee is structural instead: there is no "offline" literal and no
-// status-topic literal left in main.go, and coordinator.BridgeStatusTopic is
-// pinned against harender.Layout.Bridge in
-// TestBridgeStatusTopicIsOneString. Saying so is better than implying a
+// The guarantee is structural instead: there is no will-payload literal and
+// no status-topic literal in main.go, and the runtime's topic is pinned
+// against harender.Layout.Bridge in TestConnectedTopicIsOneString. Saying so is better than implying a
 // coverage this file does not have.
 func TestDeferredTransportRefusesUseBeforeWiring(t *testing.T) {
 	t.Parallel()

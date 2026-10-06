@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -78,36 +79,42 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// TestTheMoveChangesOnlyTheTopicAndTheOrigin is this step's central claim,
-// checked field by field rather than read off a diff.
+// movedByTheConvention are the payload keys openccu-loom ADR 0083 moved in
+// 0.10.0, and nothing else may have: the topics (status/set items), the
+// templates that read the status object's `val`, the availability (two list
+// entries with mode "all" replacing the flat bridge-status triple), and a
+// switch's payloads (JSON booleans replacing "1"/"0").
+var movedByTheConvention = map[string]bool{
+	"state_topic": true, "command_topic": true,
+	"value_template": true, "command_template": true,
+	"availability": true, "availability_mode": true,
+	"availability_topic": true, "payload_available": true, "payload_not_available": true,
+	"payload_on": true, "payload_off": true,
+}
+
+// TestTheMoveChangesOnlyTheTopicAndTheOrigin is this bridge's central claim
+// across both of its discovery migrations, checked field by field rather than
+// read off a diff, against the per-entity configs every release before 0.8.0
+// published.
 //
-// ADR 0070 phase 5 chose this bridge as the pilot precisely because the
-// sanctioned re-key could be declined here: every identity string is
-// reproducible byte-exactly, so the runtime can be proved on an installed
-// base without the confounding of a changed unique_id. That makes the
-// permitted difference between the frozen pre-migration pin and what this
-// bridge publishes now a closed, short list:
+// The permitted differences are a closed, short list:
 //
-//   - the topic, from <base>/<platform>/<unique_id>/config to
-//     <base>/device/<node_id>/config;
-//   - `origin`, added, because discovery.Validate requires origin.name on a
-//     device document where Home Assistant treats it as optional on a
-//     per-entity config;
-//   - `platform`, added, because a component inside a document has no topic
-//     to say what it is — and its value must be the platform the old topic's
-//     second segment carried, or the entity changes domain.
+//   - the config topic, from <base>/<platform>/<unique_id>/config to
+//     <base>/device/<node_id>/config (0.8.0);
+//   - `origin` and `platform`, added (0.8.0) — and the platform must be the
+//     one the old topic's second segment carried, or the entity changes
+//     domain;
+//   - the keys in [movedByTheConvention] (0.10.0, openccu-loom ADR 0083).
 //
 // Everything else must be byte-identical: unique_id, default_entity_id, the
-// whole device block, state_topic, command_topic, the three flat availability
-// keys, and every platform projection. Anything else this reports is a defect
-// in the change, not a pin to refresh.
+// whole device block, the name, the unit, the classes and every platform
+// projection. Anything else this reports is a defect in the change, not a
+// pin to refresh.
 //
-// Mutation check (each verified to fail this test): dropping the
-// Context.UniqueID override so the library case-folds the serial; dropping
-// the Context.ObjectID override so default_entity_id is seeded from the topic
-// root; returning topic.Default's state topic instead of process.StateTopic;
-// omitting the flat availability triple from Entity.BuildDiscovery; slugging
-// the node id.
+// Mutation check: dropping the Context.UniqueID override so the library
+// case-folds the serial; dropping the Context.ObjectID override so
+// default_entity_id is seeded from the topic root; building the identity from
+// the topic name instead of the identity root; slugging the node id.
 func TestTheMoveChangesOnlyTheTopicAndTheOrigin(t *testing.T) {
 	legacy := legacyAll(t)
 	now := discoveryEntries(t, capturePublish(t, goldenUnit(), goldenReport()))
@@ -133,6 +140,9 @@ func TestTheMoveChangesOnlyTheTopicAndTheOrigin(t *testing.T) {
 		}
 
 		for _, key := range sortedKeys(is.Payload) {
+			if movedByTheConvention[key] {
+				continue
+			}
 			old, had := was.Payload[key]
 			if !had {
 				addedKeys[key]++
@@ -144,7 +154,7 @@ func TestTheMoveChangesOnlyTheTopicAndTheOrigin(t *testing.T) {
 			}
 		}
 		for _, key := range sortedKeys(was.Payload) {
-			if _, still := is.Payload[key]; !still {
+			if _, still := is.Payload[key]; !still && !movedByTheConvention[key] {
 				t.Errorf("%s: %s was published before this release and is now absent", uid, key)
 			}
 		}
@@ -162,12 +172,108 @@ func TestTheMoveChangesOnlyTheTopicAndTheOrigin(t *testing.T) {
 	// added to one entity and not the others is the shape of an accident.
 	want := map[string]int{"platform": len(legacy), "origin": len(legacy)}
 	if len(addedKeys) != len(want) {
-		t.Errorf("keys added by this release: %v, want only platform and origin on all %d rows",
+		t.Errorf("keys added: %v, want only platform and origin on all %d rows",
 			addedKeys, len(legacy))
 	}
 	for key, n := range want {
 		if addedKeys[key] != n {
 			t.Errorf("%s appeared on %d of %d rows, want all of them", key, addedKeys[key], n)
+		}
+	}
+}
+
+// TestHomeAssistantIdentitiesSurviveTheConventionMove is the proof openccu-loom
+// ADR 0083 asks for: 0.10.0 moved every topic, and not one Home Assistant
+// identity. It compares what this build publishes for a representative unit
+// with a battery pack — and for the four identity-hazard devices — against
+// the documents 0.9.0 published, frozen verbatim from that release's pins
+// (testdata/frozen_v0.9.0_*.json, no -update flag touches them):
+//
+//   - the retained document topic, i.e. the discovery topic form and the
+//     node id;
+//   - the device block's identifiers and via_device;
+//   - per component, the component key, unique_id, default_entity_id and
+//     platform.
+//
+// The capture is the default instance — MQTT_TOPIC unset — whose topic name
+// moved from "zendure2mqtt" to "zendure" while its identity root did not,
+// which is the case a single shared root would have re-keyed.
+func TestHomeAssistantIdentitiesSurviveTheConventionMove(t *testing.T) {
+	var frozen map[string]map[string]any
+	readGoldenJSON(t, frozenBundlePath, &frozen)
+	now := capturedDocuments(t, capturePublish(t, goldenUnit(), goldenReport()))
+	compareDocumentIdentities(t, frozen, now)
+
+	var frozenRows, nowRows map[string]goldenEntry
+	readGoldenJSON(t, frozenIdentityPath, &frozenRows)
+	nowRows = map[string]goldenEntry{}
+	for _, c := range identityCases() {
+		for uid, e := range discoveryEntries(t, capturePublish(t, c.dev, c.report)) {
+			nowRows[c.name+"/"+uid] = e
+		}
+	}
+	for _, line := range diffAgainstPin(identityProjection(frozenRows), identityProjection(nowRows)) {
+		t.Errorf("identity hazard: %s", line)
+	}
+}
+
+// TestAConfiguredNameKeepsItsIdentity is the other half of the identity pin:
+// an instance that set MQTT_TOPIC keeps it as both its topic name and its
+// identity root, exactly as every earlier release keyed it — so the names
+// differ from the default instance's and match its own past.
+func TestAConfiguredNameKeepsItsIdentity(t *testing.T) {
+	cfg, err := config.Load(strings.NewReader("MQTT_SERVER: b\nMQTT_TOPIC: garage\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MQTTTopic != "garage" || cfg.IdentityRoot() != "garage" {
+		t.Fatalf("name %q identity %q, want garage for both", cfg.MQTTTopic, cfg.IdentityRoot())
+	}
+	r := harender.Renderer{Topics: Layout(cfg.MQTTTopic), IdentityRoot: cfg.IdentityRoot(), Lang: "en"}
+	dev, report := goldenUnit(), goldenReport()
+	points := resolvePoints(t, dev, report)
+	bundle, err := r.Bundle(dev, report, "", points)
+	if err != nil || bundle == nil {
+		t.Fatalf("Bundle: %v", err)
+	}
+	if want := "garage_" + dev.SN; bundle.NodeID != want || bundle.Device.Identifiers[0] != want {
+		t.Errorf("node id %q identifiers %v, want %q", bundle.NodeID, bundle.Device.Identifiers, want)
+	}
+	comp := bundle.Components["electric_level"]
+	if comp.UniqueID != "garage_"+dev.SN+"_electric_level" || comp.StateTopic != "garage/status/"+dev.SN+"/now/electric_level" {
+		t.Errorf("electric_level = unique_id %q state_topic %q", comp.UniqueID, comp.StateTopic)
+	}
+}
+
+// compareDocumentIdentities reports every identity difference between two
+// sets of retained device documents keyed by topic.
+func compareDocumentIdentities(t *testing.T, was, is map[string]map[string]any) {
+	t.Helper()
+	if strings.Join(sortedKeys(was), "\n") != strings.Join(sortedKeys(is), "\n") {
+		t.Fatalf("document topics moved\n now %v\n was %v", sortedKeys(is), sortedKeys(was))
+	}
+	for _, topic := range sortedKeys(was) {
+		wd, _ := was[topic]["device"].(map[string]any)
+		nd, _ := is[topic]["device"].(map[string]any)
+		for _, key := range identityKeysOfDevice {
+			if mustCanonicalValue(wd[key]) != mustCanonicalValue(nd[key]) {
+				t.Errorf("%s: device %s moved: now %s, was %s", topic, key, mustCanonicalValue(nd[key]), mustCanonicalValue(wd[key]))
+			}
+		}
+		wc, _ := was[topic]["components"].(map[string]any)
+		nc, _ := is[topic]["components"].(map[string]any)
+		if strings.Join(sortedKeys(wc), ",") != strings.Join(sortedKeys(nc), ",") {
+			t.Errorf("%s: components now %v, was %v", topic, sortedKeys(nc), sortedKeys(wc))
+			continue
+		}
+		for _, key := range sortedKeys(wc) {
+			w, _ := wc[key].(map[string]any)
+			n, _ := nc[key].(map[string]any)
+			for _, field := range []string{"unique_id", "default_entity_id", "platform"} {
+				if w[field] != n[field] {
+					t.Errorf("%s: %s.%s moved: now %v, was %v", topic, key, field, n[field], w[field])
+				}
+			}
 		}
 	}
 }
@@ -381,7 +487,7 @@ func TestSupersededTopicsMatchTheFrozenFleet(t *testing.T) {
 
 	dev, report := goldenUnit(), goldenReport()
 	points := resolvePoints(t, dev, report)
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 
 	got := make([]string, 0, len(wantTopics))
 	for _, packSN := range processOwners(points) {
@@ -482,11 +588,11 @@ func TestAFailedRetractionAbortsTheDocument(t *testing.T) {
 	}
 
 	pub := &failingClient{refuse: refuse}
-	cfg := &config.Config{MQTTTopic: "zendure2mqtt", Language: "en"}
+	cfg := testConfig(t, "en")
 	rt := newHARuntime(pub, cfg.MQTTTopic)
 	t.Cleanup(rt.Close)
-	disc := hass.New("homeassistant", cfg.MQTTTopic,
-		harender.Renderer{Root: cfg.MQTTTopic, Lang: cfg.Language}, rt, discardLogger())
+	disc := hass.New("homeassistant", cfg.MQTTTopic, cfg.IdentityRoot(),
+		testRenderer(cfg.Language), rt, discardLogger())
 
 	dev, report := goldenUnit(), goldenReport()
 	points := resolvePoints(t, dev, report)
@@ -558,7 +664,7 @@ func documentsOnTheWire(pub *failingClient) map[string]bool {
 // returning a constant fails the distinctness assertion; returning "" fails
 // the Validate assertion in TestRenderedBundleValidates.
 func TestNodeIDIsStableDistinctAndUnfolded(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	ctx := r.Context()
 	dev, report := goldenUnit(), goldenReport()
 
@@ -578,7 +684,7 @@ func TestNodeIDIsStableDistinctAndUnfolded(t *testing.T) {
 
 	// Stable: derived from the serial and the root and from nothing else, so
 	// two renderers built independently agree.
-	other := harender.Renderer{Root: "zendure2mqtt", Lang: "de"}
+	other := testRenderer("de")
 	if got := other.Context().NodeID(other.Device(dev, report, "")); got != unit {
 		t.Errorf("the node id is not stable across renderers: %q then %q", unit, got)
 	}
@@ -646,7 +752,7 @@ func TestEveryDocumentAndRetractionIsAtMostOnce(t *testing.T) {
 // extra=REMOVE_EXTRA — a key it does not declare vanishes on arrival with no
 // error on the wire and no line in any log.
 func TestEveryRenderedDocumentValidates(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 
 	cases := append([]identityCase{{"fleet", goldenUnit(), goldenReport()}}, identityCases()...)
 	for _, c := range cases {
@@ -723,7 +829,7 @@ func TestASubDeviceGetsItsOwnDocument(t *testing.T) {
 // entity of that device — and the harender renderer answers nil rather than
 // an empty document so the mistake is not reachable from the publish path.
 func TestBundleIsNotPublishedForAnOwnerWithoutEntities(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
+	r := testRenderer("en")
 	dev := goldenUnit()
 	got, err := r.Bundle(dev, &model.Report{SN: dev.SN}, "NOSUCHPACK", resolvePoints(t, dev, goldenReport()))
 	if err != nil {
@@ -748,47 +854,28 @@ var (
 // rather than as a reading of the payloads, the one availability fact whose
 // failure is total and silent.
 //
-// Home Assistant's availability_mode defaults to "all": every source an
-// entity names must say online, so one referenced topic that nobody ever
-// publishes leaves that entity permanently unavailable — with no error
-// anywhere, because there is nothing wrong with the config. The shared
-// library's own default availability shape is {LevelBridge, LevelDevice},
-// and the per-device level of it names a topic two sibling bridges never
-// publish; adopting that default here would have greyed out the whole fleet.
+// Every entity carries availability_mode "all": every source it names must
+// say available, so one referenced topic that nobody ever publishes leaves
+// that entity permanently unavailable — with no error anywhere, because
+// there is nothing wrong with the config. Since 0.10.0 each entity names two
+// sources, `<name>/connected` (the Last Will publisher.Runtime.Will()
+// returns, written by AnnounceOnline, SetConnected and AnnounceOffline) and
+// its unit's `<name>/status/<sn>/online` item (written by
+// Coordinator.DeviceReachable). A battery pack names its unit's item: the
+// pack has no reachability of its own, and a per-pack `online` nobody
+// publishes would grey out every pack.
 //
-// This bridge does not have that shape and the assertion below is what says
-// so rather than assumes it: harender states hamodel.NoAvailability(), so no
-// `availability` array is rendered at all, and every entity's only
-// availability source is the flat availability_topic — one string,
-// coordinator.BridgeStatusTopic, which is simultaneously the Last Will
-// publisher.Runtime.Will() returns and the topic AnnounceOnline and
-// AnnounceOffline write. discovery.BundleAvailabilityTopics reads both
-// spellings, so a later move to the array form is checked by this test
-// without a change to it.
-//
-// The predicate is the set of topics this daemon actually publishes to,
-// stated here as the one topic it is. Nothing is checked at run time: a
-// production guard would add a failure path to the publish of a fleet whose
-// answer cannot change between builds. This is a pin, and it moves no byte.
-//
-// Mutation check, each run five times and caught five times: making
-// harender.Context.Availability return a per-device entry rather than nil,
-// which is the library's own {LevelBridge, LevelDevice} default in the shape
-// that greyed out two sibling fleets; and pointing Entity's availTopic at a
-// per-device topic instead of Layout().Bridge(). A third mutation —
-// returning the bridge topic from harender.Layout.Availability rather than
-// "" — survives, and correctly: Context.Availability returns nil before that
-// method is ever consulted, so it renders nothing. That is a fact about the
-// rendering path rather than a hole in this pin, and it is recorded here so
-// the next reader does not have to re-derive it.
+// The predicate is the set of topics this daemon actually publishes to for
+// the device under test. Nothing is checked at run time: this is a pin.
 func TestEveryEntityReferencesATopicThisBridgePublishes(t *testing.T) {
-	r := harender.Renderer{Root: "zendure2mqtt", Lang: "en"}
-	published := func(topic string) bool {
-		return topic == BridgeStatusTopic("zendure2mqtt")
-	}
+	r := testRenderer("en")
+	layout := Layout(testName)
 
 	cases := append([]identityCase{{"fleet", goldenUnit(), goldenReport()}}, identityCases()...)
 	for _, c := range cases {
+		published := func(topic string) bool {
+			return topic == layout.Connected() || topic == layout.Online(c.dev.SN)
+		}
 		points := resolvePoints(t, c.dev, c.report)
 		for _, packSN := range process.Owners(points) {
 			bundle, err := r.Bundle(c.dev, c.report, packSN, points)
@@ -799,9 +886,11 @@ func TestEveryEntityReferencesATopicThisBridgePublishes(t *testing.T) {
 				continue
 			}
 			topics := discovery.BundleAvailabilityTopics(bundle)
-			if len(topics) != 1 || topics[0] != BridgeStatusTopic("zendure2mqtt") {
-				t.Errorf("%s/%s: the document's entities reference %v, want the one bridge status topic %q",
-					c.name, packSN, topics, BridgeStatusTopic("zendure2mqtt"))
+			want := []string{layout.Connected(), layout.Online(c.dev.SN)}
+			slices.Sort(topics)
+			slices.Sort(want)
+			if !slices.Equal(topics, want) {
+				t.Errorf("%s/%s: the document's entities reference %v, want %v", c.name, packSN, topics, want)
 			}
 			if err := discovery.CheckBundleAvailability(bundle, published); err != nil {
 				t.Errorf("%s/%s: %v — every entity naming that topic is permanently unavailable, with nothing in any log saying so",

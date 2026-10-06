@@ -8,6 +8,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/SukramJ/go-hamqtt/topic"
+
 	"github.com/SukramJ/go-mqtt/protocol"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
@@ -170,8 +172,8 @@ func FuzzValidPackSN(f *testing.F) {
 }
 
 // FuzzResolveTopicSafety runs the two parsers through the path that actually
-// publishes: Resolve mints Points from a report, and StateTopic/CommandTopic
-// assemble the topic the broker sees. The invariant is that no device-supplied
+// publishes: Resolve mints Points from a report, and Item through
+// topic.SmartHome's Status and Set assembles the topic the broker sees. The invariant is that no device-supplied
 // property name or pack serial can produce a topic the MQTT layer rejects.
 func FuzzResolveTopicSafety(f *testing.F) {
 	for _, seed := range [][2]string{
@@ -187,6 +189,10 @@ func FuzzResolveTopicSafety(f *testing.F) {
 	}
 
 	cat := loadFuzzCatalog(f)
+	layout, err := topic.NewSmartHome("zendure")
+	if err != nil {
+		f.Fatal(err)
+	}
 
 	f.Fuzz(func(t *testing.T, property, packSN string) {
 		if len(property) > maxFuzzTopicLen || len(packSN) > maxFuzzTopicLen {
@@ -198,21 +204,21 @@ func FuzzResolveTopicSafety(f *testing.F) {
 			PackData:   []map[string]any{{"sn": packSN, "maxVol": 1}},
 		}
 
-		for _, p := range Resolve(rep, cat, "de") {
-			for _, topic := range []string{
-				StateTopic("zendure", rep.SN, p),
-				CommandTopic("zendure", rep.SN, p),
+		for _, p := range Resolve(rep, cat) {
+			for _, name := range []string{
+				layout.Status(Item(rep.SN, p)...),
+				layout.Set(Item(rep.SN, p)...),
 			} {
-				if err := protocol.ValidateTopicName(topic); err != nil {
+				if err := protocol.ValidateTopicName(name); err != nil {
 					t.Fatalf("property %q / packSN %q produced invalid topic %q: %v",
-						property, packSN, topic, err)
+						property, packSN, name, err)
 				}
 				// No empty level: an empty level would silently reparent the
 				// entity under a different device in the topic tree.
-				for level := range strings.SplitSeq(topic, "/") {
+				for level := range strings.SplitSeq(name, "/") {
 					if level == "" {
 						t.Fatalf("property %q / packSN %q produced topic %q with an empty level",
-							property, packSN, topic)
+							property, packSN, name)
 					}
 				}
 			}

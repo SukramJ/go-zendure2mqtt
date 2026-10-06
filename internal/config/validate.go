@@ -8,6 +8,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/SukramJ/go-hamqtt/topic"
 )
 
 // ValidationError aggregates every config problem found by [Validate].
@@ -72,6 +74,11 @@ func Validate(c *Config) error {
 	}
 	if c.MQTTTopic == "" {
 		add("MQTT_TOPIC is required")
+	} else if _, err := topic.NewSmartHomeMultiLevel(c.MQTTTopic); err != nil {
+		add("MQTT_TOPIC %v", err)
+	}
+	if v := c.MQTTStatsInterval; v != nil && *v < 0 {
+		add("MQTT_STATS_INTERVAL must be 0 (off) or a number of seconds, got %d", *v)
 	}
 
 	// --- Diagnostic web UI ---
