@@ -244,6 +244,23 @@ func (d *Discovery) Forget(configTopics []string) {
 	}
 }
 
+// Reopen forgets which device documents were sent, so the next [Discovery.Publish]
+// of every device writes its document again — through PublishBundle, so the
+// superseded per-entity configs are retracted first exactly as on the first
+// publish.
+//
+// The coordinator calls it on every broker (re)connect. The sent set is per
+// process, but what it records — "the broker holds this document" — is per
+// broker store: a broker restarted without persistence comes back empty, Home
+// Assistant (still running) keeps its entities and does not notice, and the
+// next Home Assistant restart then finds no document at all. Republishing an
+// unchanged document is a no-op for Home Assistant.
+func (d *Discovery) Reopen() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	clear(d.sent)
+}
+
 // UniqueID is the formula behind every entity's unique_id, exported so a
 // second renderer can be proved to produce the same string rather than a
 // second copy of the same formula.

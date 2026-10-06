@@ -125,7 +125,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "non-german-accent/zendure2mqtt_SF2400AC0012345_charge_active": {
@@ -254,7 +254,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_charge_active": {
@@ -382,7 +382,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AB-12/soc_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AB-12_soc_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_pack_AB_12_soc_level": {
@@ -424,7 +424,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/battery/AB_12/soc_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AB_12_soc_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "pack-serial-hyphen-vs-underscore/zendure2mqtt_SF2400AC0012345_pack_count": {
@@ -464,7 +464,7 @@
       "platform": "sensor",
       "state_topic": "zendure/status/SF2400AC0012345/static/pack_count",
       "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   },
   "umlaut-u/zendure2mqtt_SF2400AC0012345_charge_active": {
@@ -593,7 +593,7 @@
       "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
       "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
       "unit_of_measurement": "%",
-      "value_template": "{{ value_json.val }}"
+      "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
     }
   }
 }

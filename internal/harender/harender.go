@@ -50,6 +50,8 @@
 package harender
 
 import (
+	"strings"
+
 	hacatalog "github.com/SukramJ/go-ha-catalog"
 	"github.com/SukramJ/go-hamqtt/discovery"
 	hamodel "github.com/SukramJ/go-hamqtt/model"
@@ -302,11 +304,24 @@ func (r Renderer) Entity(dev source.Device, p process.Point) (*Entity, bool) {
 	// it in silence, and the pins would then agree with the wrong thing.
 	switch platform {
 	case hacatalog.PlatformSensor:
+		if enum := Enum(e); enum != nil {
+			// A value-mapped sensor is an enum sensor: its options are the
+			// labels, and the same guarded mapping as a select renders a
+			// code outside the map as unknown rather than as a state Home
+			// Assistant rejects (mqtt/sensor.py, "Ignoring invalid option").
+			desc.DeviceClass = hamodel.DeviceClass("enum")
+			desc.Options = enum
+			desc.ValueTemplate = EnumValueTemplate(enum, r.Lang)
+			break
+		}
 		desc.StateClass = sensorStateClass(e.DeviceClass, e.Unit)
+		desc.ValueTemplate = ValueTemplate
 	case hacatalog.PlatformNumber:
 		desc.Min, desc.Max, desc.Step = e.Min, e.Max, e.Step
+		desc.ValueTemplate = ValueTemplate
 	case hacatalog.PlatformSelect:
 		desc.Options = Enum(e)
+		desc.ValueTemplate = EnumValueTemplate(desc.Options, r.Lang)
 	default:
 		// The catalog loader accepts exactly five platforms. Three are
 		// answered above and switch is answered in [Entity.BuildDiscovery],
@@ -357,6 +372,46 @@ func sensorStateClass(deviceClass, unit string) hacatalog.StateClass {
 	default:
 		return ""
 	}
+}
+
+// ValueTemplate is the value_template of every sensor and number: the status
+// object's `val`, or `None` — which Home Assistant reads as unknown
+// (mqtt/sensor.py PAYLOAD_NONE, mqtt/number.py payload_reset "None") — when
+// there is none to show.
+//
+// The library's bare `{{ value_json.val }}` fails on the empty retained
+// payload that clears an item: `value_json` is undefined, reading `.val` off
+// it raises and Home Assistant logs an ERROR (helpers/template
+// make_logging_undefined) and keeps the entity's previous state, so a cleared
+// value went on showing its old one with one error per clear.
+const ValueTemplate = `{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}`
+
+// EnumValueTemplate is the value_template of a select or an enum sensor: the
+// wire token mapped to the option Home Assistant lists in lang, and `None`
+// (unknown) for anything that is not one of the tokens — a raw code the
+// catalog does not map, or a cleared item.
+//
+// Every token is mapped, in English too where token and option are the same
+// string, because the miss is the point: the library's pass-through
+// (`m.get(val, val)`) hands an unknown code to Home Assistant as a state,
+// which a select logs as "Invalid option" and ignores (mqtt/select.py), so
+// the entity kept showing the last valid option as if it were current.
+// `None` sets it to unknown instead. Only strings are looked up: a token is
+// a string, and an unmapped code is a number.
+func EnumValueTemplate(e *hamodel.Enum, lang string) string {
+	if e == nil || len(e.Codes) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`{% set m = {`)
+	for i, code := range e.Codes {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(discovery.JinjaQuote(code) + ": " + discovery.JinjaQuote(e.Label(code, lang)))
+	}
+	b.WriteString(`} %}{% if value_json is defined and value_json.val is string %}{{ m.get(value_json.val, 'None') }}{% else %}None{% endif %}`)
+	return b.String()
 }
 
 // Enum renders a value-mapped entry as a [hamodel.Enum]: the codes are the

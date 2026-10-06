@@ -83,9 +83,13 @@ type Backend interface {
 type Observer interface {
 	// UpstreamUsable reports whether the backend can currently reach the
 	// thing it bridges: for the cloud, its MQTT session; for the local
-	// transport, at least one device that answered its latest poll.
+	// transport, at least one reachable device.
 	UpstreamUsable(usable bool)
-	// DeviceReachable reports whether dev answered its latest attempt.
+	// DeviceReachable reports whether dev is reachable through the backend:
+	// locally, it answers its HTTP API (unreachable only after consecutive
+	// failed polls, not after one); through the cloud, it is listed by the
+	// login, re-reported on every session restore — a session drop is the
+	// upstream's business and does not make a device unreachable.
 	DeviceReachable(dev Device, reachable bool)
 }
 

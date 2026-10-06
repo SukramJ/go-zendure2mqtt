@@ -34,8 +34,16 @@ type Backend struct {
 
 	observer  source.Observer
 	reachMu   sync.Mutex
-	reachable map[string]bool // sn -> answered its latest poll
+	reachable map[string]bool // sn -> reported reachable (debounced, see observe)
+	failures  map[string]int  // sn -> consecutive failed polls
 }
+
+// unreachableAfter is how many consecutive failed polls make a device
+// unreachable. One missed poll — a slow answer, a dropped packet — does not:
+// 0.9.0 had no per-device availability at all, so 0.10.0 turning a single
+// miss into an unavailable device (and, for a single-device install,
+// `<name>/connected` 1 and every entity unavailable) was a regression.
+const unreachableAfter = 2
 
 // New builds a local backend for the configured devices.
 func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Backend {
@@ -51,6 +59,7 @@ func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Back
 		logger:    logger,
 		bySN:      make(map[string]source.Device, len(cfgs)),
 		reachable: make(map[string]bool, len(cfgs)),
+		failures:  make(map[string]int, len(cfgs)),
 	}
 	for _, c := range cfgs {
 		dev := source.Device{SN: c.SN, DeviceID: c.SN, DeviceName: c.DeviceName, Model: c.Model, Address: c.Host}
@@ -63,14 +72,28 @@ func New(cfgs []DeviceConfig, interval time.Duration, logger *slog.Logger) *Back
 // Observe implements [source.Observable].
 func (b *Backend) Observe(o source.Observer) { b.observer = o }
 
-// observe records one poll outcome and tells the observer. The upstream of
-// the local transport is the devices themselves, so it is usable while at
-// least one of them answered its latest poll.
+// observe records one poll outcome and tells the observer.
+//
+// What `online` means for this transport: the device answers its HTTP API. A
+// successful poll makes it reachable at once; it becomes unreachable only at
+// the [unreachableAfter]-th consecutive failed poll, and a failure short of
+// that reports nothing, so the device keeps its state. The upstream of the
+// local transport is the devices themselves, so it is usable while at least
+// one of them is reachable in that same debounced sense.
 func (b *Backend) observe(dev source.Device, ok bool) {
 	if b.observer == nil {
 		return
 	}
 	b.reachMu.Lock()
+	if ok {
+		b.failures[dev.SN] = 0
+	} else {
+		b.failures[dev.SN]++
+		if b.failures[dev.SN] < unreachableAfter {
+			b.reachMu.Unlock()
+			return
+		}
+	}
 	b.reachable[dev.SN] = ok
 	usable := false
 	for _, r := range b.reachable {

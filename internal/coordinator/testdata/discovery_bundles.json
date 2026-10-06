@@ -27,7 +27,7 @@
         "platform": "select",
         "state_topic": "zendure/status/SF2400AC0012345/config/ac_mode",
         "unique_id": "zendure2mqtt_SF2400AC0012345_ac_mode",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% set m = {'charge': 'charge', 'discharge': 'discharge'} %}{% if value_json is defined and value_json.val is string %}{{ m.get(value_json.val, 'None') }}{% else %}None{% endif %}"
       },
       "battery_voltage": {
         "availability": [
@@ -53,7 +53,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/battery_voltage",
         "unique_id": "zendure2mqtt_SF2400AC0012345_battery_voltage",
         "unit_of_measurement": "V",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "charge_active": {
         "availability": [
@@ -105,7 +105,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/static/charge_max_limit",
         "unique_id": "zendure2mqtt_SF2400AC0012345_charge_max_limit",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "discharge_active": {
         "availability": [
@@ -157,7 +157,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/electric_level",
         "unique_id": "zendure2mqtt_SF2400AC0012345_electric_level",
         "unit_of_measurement": "%",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "grid_input_power": {
         "availability": [
@@ -183,7 +183,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/grid_input_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_grid_input_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "grid_off_power": {
         "availability": [
@@ -209,7 +209,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/grid_off_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_grid_off_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "input_limit": {
         "availability": [
@@ -237,7 +237,7 @@
         "step": 100,
         "unique_id": "zendure2mqtt_SF2400AC0012345_input_limit",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "inverse_max_power": {
         "availability": [
@@ -265,7 +265,7 @@
         "step": 100,
         "unique_id": "zendure2mqtt_SF2400AC0012345_inverse_max_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "min_soc": {
         "availability": [
@@ -293,7 +293,7 @@
         "step": 1,
         "unique_id": "zendure2mqtt_SF2400AC0012345_min_soc",
         "unit_of_measurement": "%",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "output_home_power": {
         "availability": [
@@ -319,7 +319,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/output_home_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_output_home_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "output_limit": {
         "availability": [
@@ -347,7 +347,7 @@
         "step": 100,
         "unique_id": "zendure2mqtt_SF2400AC0012345_output_limit",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "output_pack_power": {
         "availability": [
@@ -373,7 +373,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/output_pack_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_output_pack_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "pack_count": {
         "availability": [
@@ -396,7 +396,7 @@
         "platform": "sensor",
         "state_topic": "zendure/status/SF2400AC0012345/static/pack_count",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_count",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "pack_input_power": {
         "availability": [
@@ -422,7 +422,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/pack_input_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_input_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "remain_out_time": {
         "availability": [
@@ -448,7 +448,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/remain_out_time",
         "unique_id": "zendure2mqtt_SF2400AC0012345_remain_out_time",
         "unit_of_measurement": "min",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "rssi": {
         "availability": [
@@ -474,7 +474,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/static/rssi",
         "unique_id": "zendure2mqtt_SF2400AC0012345_rssi",
         "unit_of_measurement": "dBm",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "smart_mode": {
         "availability": [
@@ -502,7 +502,7 @@
         "platform": "select",
         "state_topic": "zendure/status/SF2400AC0012345/config/smart_mode",
         "unique_id": "zendure2mqtt_SF2400AC0012345_smart_mode",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% set m = {'persist': 'persist', 'volatile': 'volatile'} %}{% if value_json is defined and value_json.val is string %}{{ m.get(value_json.val, 'None') }}{% else %}None{% endif %}"
       },
       "soc_set": {
         "availability": [
@@ -530,7 +530,7 @@
         "step": 1,
         "unique_id": "zendure2mqtt_SF2400AC0012345_soc_set",
         "unit_of_measurement": "%",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "solar_input_power": {
         "availability": [
@@ -556,7 +556,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/solar_input_power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_solar_input_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "temperature": {
         "availability": [
@@ -582,7 +582,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/now/temperature",
         "unique_id": "zendure2mqtt_SF2400AC0012345_temperature",
         "unit_of_measurement": "°C",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       }
     },
     "device": {
@@ -626,7 +626,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/current",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_current",
         "unit_of_measurement": "A",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "max_cell_voltage": {
         "availability": [
@@ -652,7 +652,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/max_cell_voltage",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_cell_voltage",
         "unit_of_measurement": "V",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "max_temp": {
         "availability": [
@@ -678,7 +678,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/max_temp",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_max_temp",
         "unit_of_measurement": "°C",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "min_cell_voltage": {
         "availability": [
@@ -704,7 +704,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/min_cell_voltage",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_min_cell_voltage",
         "unit_of_measurement": "V",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "power": {
         "availability": [
@@ -730,7 +730,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/power",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_power",
         "unit_of_measurement": "W",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "soc_level": {
         "availability": [
@@ -756,7 +756,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/soc_level",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_soc_level",
         "unit_of_measurement": "%",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       },
       "total_voltage": {
         "availability": [
@@ -782,7 +782,7 @@
         "state_topic": "zendure/status/SF2400AC0012345/battery/AO4H2301X01/total_voltage",
         "unique_id": "zendure2mqtt_SF2400AC0012345_pack_AO4H2301X01_total_voltage",
         "unit_of_measurement": "V",
-        "value_template": "{{ value_json.val }}"
+        "value_template": "{% if value_json is defined and value_json.val is defined and value_json.val is not none and value_json.val != '' %}{{ value_json.val }}{% else %}None{% endif %}"
       }
     },
     "device": {

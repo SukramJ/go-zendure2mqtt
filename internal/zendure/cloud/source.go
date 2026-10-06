@@ -73,17 +73,26 @@ func New(token string, tlsVerify bool, logger *slog.Logger) *Backend {
 // Observe implements [source.Observable].
 func (b *Backend) Observe(o source.Observer) { b.observer = o }
 
-// sessionUp tells the observer the cloud session came up or went down. The
-// session is this transport's upstream: while it is down no device can be
-// read or written, so every known device is reported unreachable with it.
-// A device is reported reachable again by its next report.
+// sessionUp tells the observer the cloud session came up or went down.
+//
+// What `online` means for this transport: the device is reachable through
+// the cloud. The session is the upstream and is expressed by
+// `<name>/connected` alone (2 while it is up, 1 while it is down); neither the
+// login's device list nor the report stream carries a per-device online flag
+// this backend could read, so every device the login listed is reachable
+// while the session is up. A drop therefore changes only the upstream level
+// and leaves every device's `online` as it is, and a restored session
+// re-reports every device at once rather than waiting for its next report.
+// 0.10.0 latched every device offline on a drop until that device happened
+// to report again, which under `availability_mode: all` left a quiet device
+// unavailable long after the session was back.
 func (b *Backend) sessionUp(up bool) {
 	if b.observer == nil {
 		return
 	}
-	if !up {
+	if up {
 		for _, dev := range b.Devices() {
-			b.observer.DeviceReachable(dev, false)
+			b.observer.DeviceReachable(dev, true)
 		}
 	}
 	b.observer.UpstreamUsable(up)

@@ -167,16 +167,19 @@ func (o *recordingObserver) DeviceReachable(dev source.Device, r bool) {
 }
 
 // TestCloudReportsReachability pins what feeds `<name>/connected` and
-// `<name>/status/<sn>/online` in cloud mode: the session is the upstream, a
-// report makes its device reachable, and a lost session takes every device
-// with it.
+// `<name>/status/<sn>/online` in cloud mode: the session is the upstream and
+// alone moves `connected`; every listed device is reachable through the cloud
+// while the session is up, re-reported at once when it comes back — also a
+// device that has not reported since — and a drop does not latch any device
+// offline (0.10.0 did, until that device's next report).
 func TestCloudReportsReachability(t *testing.T) {
 	dev := source.Device{SN: "SN1", DeviceID: "dev1", ProductKey: "pk"}
+	quiet := source.Device{SN: "SN2", DeviceID: "dev2", ProductKey: "pk"}
 	o := &recordingObserver{}
 	b := &Backend{
 		logger:    slog.New(slog.DiscardHandler),
-		byID:      map[string]source.Device{"dev1": dev},
-		devices:   []source.Device{dev},
+		byID:      map[string]source.Device{"dev1": dev, "dev2": quiet},
+		devices:   []source.Device{dev, quiet},
 		onReading: func(source.Reading) {},
 	}
 	b.Observe(o)
@@ -184,8 +187,10 @@ func TestCloudReportsReachability(t *testing.T) {
 	b.sessionUp(true)
 	b.handleMessage(&mqtt.Message{Topic: "iot/pk/dev1/properties/report", Payload: []byte(`{}`)})
 	b.sessionUp(false)
+	b.sessionUp(true)
 
-	if got, want := strings.Join(o.events, " "), "upstream=true SN1=true SN1=false upstream=false"; got != want {
+	want := "SN1=true SN2=true upstream=true SN1=true upstream=false SN1=true SN2=true upstream=true"
+	if got := strings.Join(o.events, " "); got != want {
 		t.Errorf("events = %q, want %q", got, want)
 	}
 }

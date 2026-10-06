@@ -91,6 +91,23 @@ type Coordinator struct {
 	// migrateWindow overrides the sweep's listening window; zero is
 	// [migrateWindow]. Only tests set it.
 	migrateWindow time.Duration
+
+	unmappedMu   sync.Mutex
+	unmappedSeen map[string]struct{} // see warnUnmapped
+
+	// lastMu guards last and reach. last is each device's latest report, so
+	// a broker (re)connect can republish the device documents at once; reach
+	// is each device's latest reachability, so the same reconnect publishes
+	// the current `online` rather than the cached one.
+	lastMu sync.Mutex
+	last   map[string]lastReport
+	reach  map[string]bool
+}
+
+// lastReport is one device's latest report, kept for [Coordinator.PublishOnline].
+type lastReport struct {
+	dev    source.Device
+	report *model.Report
 }
 
 // New constructs a Coordinator.
@@ -399,10 +416,11 @@ func (c *Coordinator) watchBirth(ctx context.Context) error {
 // OnConnect.
 //
 // It writes `<name>/connected` at the current level — 1 until the backend
-// reports its upstream usable, 2 while it is — and re-sends every cached
-// status item unchanged, original `ts` included (spec §3.2: status is
-// published again after every broker reconnect, so the retained state is
-// complete even on a broker that came back without its store).
+// reports its upstream usable, 2 while it is — then every known device's
+// discovery documents and current `online`, and re-sends every cached status
+// item unchanged, original `ts` included (spec §3.2: status is published
+// again after every broker reconnect, so the retained state is complete even
+// on a broker that came back without its store).
 func (c *Coordinator) PublishOnline(ctx context.Context) {
 	// The same reopening on the discovery plane, and it closes a window
 	// whose only symptom is silence. publisher.Runtime memoises a superseded
@@ -434,8 +452,72 @@ func (c *Coordinator) PublishOnline(ctx context.Context) {
 	if err := c.deps.HARuntime.AnnounceOnline(ctx); err != nil {
 		c.logger.Warn("coordinator.online_failed", slog.String("err", err.Error()))
 	}
+	c.republishDiscovery(ctx)
+	c.publishReachability(ctx)
 	if _, err := c.deps.StatePlane.Republish(ctx); err != nil {
 		c.logger.Warn("coordinator.republish_failed", slog.String("err", err.Error()))
+	}
+}
+
+// republishDiscovery writes every known device's documents again on a broker
+// (re)connect, from the device's latest report.
+//
+// The documents are retained, so a broker that kept its store needs none of
+// this. One that did not — restarted without persistence, or its store
+// cleared — comes back without them while Home Assistant, still running,
+// keeps its entities and sends no birth message this daemon is guaranteed to
+// see (its birth after its own reconnect races this daemon's resubscribe).
+// Nothing was then wrong until Home Assistant's next restart, which found no
+// document and left every entity of this bridge unavailable.
+//
+// It goes through hass.Discovery.Publish and therefore PublishBundle, never
+// Runtime.Republish: the retractions of the superseded per-entity configs run
+// first, again, on the new connection (Reset above forgot them), and only
+// then is the document written — the ordering
+// TestRetractionsAreReSentAfterAReconnect pins.
+func (c *Coordinator) republishDiscovery(ctx context.Context) {
+	if c.deps.HASS == nil {
+		return
+	}
+	c.lastMu.Lock()
+	snapshot := make([]lastReport, 0, len(c.last))
+	for _, lr := range c.last {
+		snapshot = append(snapshot, lr)
+	}
+	c.lastMu.Unlock()
+	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].dev.SN < snapshot[j].dev.SN })
+
+	c.deps.HASS.Reopen()
+	for _, lr := range snapshot {
+		points := process.Resolve(lr.report, c.deps.Catalog)
+		points = append(points, c.switchPoints(lr.report)...)
+		c.deps.HASS.Publish(ctx, lr.dev, lr.report, points)
+	}
+}
+
+// publishReachability writes every device's current `online` before the
+// state plane replays its cache.
+//
+// The cache holds the last value that reached the broker. A change during
+// the outage — a device that stopped answering while the broker was gone —
+// failed to publish and left the cache on the old value, so the replay alone
+// would restore a stale `online` until the next change. Publishing the
+// current value first updates the cache (only when it differs), and the
+// replay then carries it.
+func (c *Coordinator) publishReachability(ctx context.Context) {
+	c.lastMu.Lock()
+	sns := make([]string, 0, len(c.reach))
+	for sn := range c.reach {
+		sns = append(sns, sn)
+	}
+	sort.Strings(sns)
+	current := make([]bool, len(sns))
+	for i, sn := range sns {
+		current[i] = c.reach[sn]
+	}
+	c.lastMu.Unlock()
+	for i, sn := range sns {
+		c.publishState(ctx, c.topics.Online(sn), current[i])
 	}
 }
 
@@ -471,6 +553,12 @@ func (c *Coordinator) UpstreamUsable(usable bool) {
 // `<name>/status/<sn>/online` item, a boolean status object deduplicated on
 // its value like every other.
 func (c *Coordinator) DeviceReachable(dev source.Device, reachable bool) {
+	c.lastMu.Lock()
+	if c.reach == nil {
+		c.reach = map[string]bool{}
+	}
+	c.reach[dev.SN] = reachable
+	c.lastMu.Unlock()
 	ctx, cancel := c.callbackContext()
 	defer cancel()
 	c.publishState(ctx, c.topics.Online(dev.SN), reachable)
@@ -507,6 +595,12 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		c.deps.State.Update(dev, report, points, c.deps.Cfg.Language)
 	}
 	if c.deps.HASS != nil {
+		c.lastMu.Lock()
+		if c.last == nil {
+			c.last = map[string]lastReport{}
+		}
+		c.last[dev.SN] = lastReport{dev: dev, report: report}
+		c.lastMu.Unlock()
 		published := c.deps.HASS.Publish(ctx, dev, report, points)
 		// Clear any of our own retained discovery configs for this device
 		// that we no longer publish, so they do not linger as unavailable
@@ -519,6 +613,9 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 	}
 	written := 0
 	for _, p := range points {
+		if p.Unmapped {
+			c.warnUnmapped(dev.SN, p)
+		}
 		if c.publishState(ctx, c.topics.StateTopic(dev.SN, p), p.Value) {
 			written++
 		}
@@ -529,6 +626,36 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 	// should show written=0 and an operator should be able to see that.
 	c.logger.Debug("coordinator.published",
 		slog.String("sn", dev.SN), slog.Int("points", len(points)), slog.Int("written", written))
+}
+
+// maxUnmappedWarnings bounds the set of (device, key, value) triples
+// [Coordinator.warnUnmapped] remembers, so a device reporting an endless
+// stream of distinct junk values cannot grow it without limit.
+const maxUnmappedWarnings = 256
+
+// warnUnmapped logs, once per device, key and raw value, a value-mapped
+// property whose value the catalog does not map. The item still carries the
+// raw value and Home Assistant shows the entity as unknown; this line is what
+// tells an operator which code to add to zendure.yaml.
+func (c *Coordinator) warnUnmapped(sn string, p process.Point) {
+	raw := fmt.Sprintf("%v", p.Value)
+	key := sn + "\x00" + p.PackSN + "\x00" + p.Entry.Property + "\x00" + raw
+	c.unmappedMu.Lock()
+	if c.unmappedSeen == nil {
+		c.unmappedSeen = map[string]struct{}{}
+	}
+	_, seen := c.unmappedSeen[key]
+	if !seen && len(c.unmappedSeen) < maxUnmappedWarnings {
+		c.unmappedSeen[key] = struct{}{}
+	}
+	c.unmappedMu.Unlock()
+	if seen {
+		return
+	}
+	c.logger.Warn("coordinator.unmapped_value",
+		slog.String("sn", sn), slog.String("pack", p.PackSN),
+		slog.String("property", p.Entry.Property), slog.String("raw", raw),
+		slog.String("hint", "the catalog's value_map has no entry for this value; Home Assistant shows the entity as unknown"))
 }
 
 // publishState writes one status item through the state plane and reports
