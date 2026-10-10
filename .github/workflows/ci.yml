@@ -26,7 +26,7 @@ concurrency:
 
 env:
   CGO_ENABLED: "0"
-  GO_VERSION: "1.27.1"
+  GO_VERSION: "1.27.2"
   # The lint tools are pinned, not @latest. Dependabot tracks go.mod
   # requires, not go-install lines in a workflow, so these are bumped by
   # hand — deliberately: raise the version, run `make check`, and fix or
@@ -38,7 +38,7 @@ env:
   # Note the gofumpt step runs the standalone formatter, which is stricter
   # than the one golangci-lint bundles, so both pins matter independently.
   GOFUMPT_VERSION: "v0.12.0"
-  GOLANGCI_LINT_VERSION: "v2.13.2"
+  GOLANGCI_LINT_VERSION: "v2.14.0"
   # The security tools are pinned for the same reason, with one difference
   # worth stating: pinning these binaries does not freeze the answer they
   # give. govulncheck resolves the vulnerability database at run time and
