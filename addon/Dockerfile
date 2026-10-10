@@ -28,7 +28,7 @@
 ARG BUILD_FROM
 
 # ---------- Stage 1: build the Go binary ----------
-FROM golang:1.27.1-alpine AS builder
+FROM golang:1.27.2-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
