@@ -1,4 +1,13 @@
-# Unreleased
+# Version 0.11.0 (2026-10-12)
+
+Dependency update; no behaviour change. Updating needs no other action.
+
+## Changed
+
+- go-hamqtt 0.36.0 -> 0.37.0 (discovery findings with Home Assistant's
+  scope, opt-in containment). The bridge keeps publishing its device
+  documents exactly as before: its publish path never withheld a document
+  on a validation error, so there is nothing to relax.
 
 ## Security
 
