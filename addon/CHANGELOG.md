@@ -5,6 +5,11 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.11.0
+
+Dependency update (go-hamqtt 0.37.0); no change to entities, options or
+behaviour. Updating needs no other action.
+
 ## 0.10.1
 
 Fixes for 0.10.0; updating needs no other action.
