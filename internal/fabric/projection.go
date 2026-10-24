@@ -37,6 +37,11 @@ type projection struct {
 	mu       sync.Mutex
 	units    map[string]*unit
 	complete bool
+	// reach is each unit's reachability as the backend last reported it;
+	// down is true while the backend's upstream is not usable, which makes
+	// every unit unreachable.
+	reach map[string]bool
+	down  bool
 }
 
 // unit is one Zendure device as the node serves it, with the power it
@@ -51,7 +56,7 @@ type unit struct {
 }
 
 func newProjection(agg *node.Aggregator, devices func() []source.Device, logger *slog.Logger) *projection {
-	return &projection{agg: agg, devices: devices, logger: logger, units: map[string]*unit{}}
+	return &projection{agg: agg, devices: devices, logger: logger, units: map[string]*unit{}, reach: map[string]bool{}}
 }
 
 // stableKey is a unit's key on the node: its serial number, the identity the
@@ -149,5 +154,33 @@ func (p *projection) markComplete(ctx context.Context) {
 	p.mu.Unlock()
 	if !done {
 		p.agg.MarkComplete() //nolint:contextcheck // the node's own: every device is added
+	}
+}
+
+// deviceReachable records what the backend says of dev and sets the unit's
+// BridgedDeviceBasicInformation Reachable: reachable while the backend says
+// so and its upstream is usable. A unit the backend reports before any
+// reading is added then.
+func (p *projection) deviceReachable(ctx context.Context, dev source.Device, reachable bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reach[dev.SN] = reachable
+	u, err := p.ensureLocked(ctx, dev)
+	if err != nil {
+		p.logger.Warn("zendure2mqtt.matter_device_failed", slog.String("sn", dev.SN), slog.String("err", err.Error()))
+		return
+	}
+	u.dev.SetReachable(ctx, reachable && !p.down)
+}
+
+// upstreamUsable sets every unit unreachable while the backend's upstream is
+// down, and back to its own reachability once it is usable again.
+func (p *projection) upstreamUsable(ctx context.Context, usable bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.down = !usable
+	for sn, u := range p.units {
+		reachable, known := p.reach[sn]
+		u.dev.SetReachable(ctx, usable && (reachable || !known))
 	}
 }

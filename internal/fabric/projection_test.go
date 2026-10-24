@@ -235,3 +235,73 @@ func TestActivePower(t *testing.T) {
 		}
 	}
 }
+
+// TestReachabilityFlips: DeviceReachable(false) sets the unit's Reachable
+// false, and a controller's subscription sees it; an unusable upstream makes
+// every unit unreachable, a usable one restores each unit's own word.
+func TestReachabilityFlips(t *testing.T) {
+	s := newSite(t, &fakeDevices{devs: []source.Device{unitA}})
+	ep := s.endpoint(t, unitA.SN)
+	reports := make(chan *fabrictest.Report, 16)
+	sub, err := fabrictest.Subscribe(s.ctx, s.pair, fabrictest.SubscribeRequest{
+		Attributes: []fabrictest.AttributePath{client.AttributeAt(ep, bdbidef.ClusterID, bdbidef.AttrReachable)},
+		Updated:    func(r *fabrictest.Report) { reports <- r },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sub.Close()
+	sees := func(want bool) func() bool {
+		return func() bool {
+			for {
+				select {
+				case r := <-reports:
+					if _, ok := r.Value(ep, bdbidef.ClusterID, bdbidef.AttrReachable); !ok {
+						continue
+					}
+					if info, _ := bdbidef.StateFrom(r.Values(ep, bdbidef.ClusterID)); info.Reachable == want {
+						return true
+					}
+				default:
+					return false
+				}
+			}
+		}
+	}
+	reachable := func() bool {
+		t.Helper()
+		values, err := fabrictest.ReadCluster(s.ctx, s.pair, ep, bdbidef.ClusterID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, _ := bdbidef.StateFrom(values)
+		return info.Reachable
+	}
+	act := func(fn func()) {
+		t.Helper()
+		if err := s.pair.Device.Act(func(*node.Node) error { fn(); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	act(func() { s.p.deviceReachable(s.ctx, unitA, false) })
+	if err := s.Eventually(s.ctx, "Reachable false", sees(false)); err != nil {
+		t.Fatal(err)
+	}
+	act(func() { s.p.deviceReachable(s.ctx, unitA, true) })
+	if !reachable() {
+		t.Fatal("unit unreachable after DeviceReachable(true)")
+	}
+	act(func() { s.p.upstreamUsable(s.ctx, false) })
+	if reachable() {
+		t.Fatal("unit reachable while the upstream is down")
+	}
+	act(func() { s.p.deviceReachable(s.ctx, unitA, true) })
+	if reachable() {
+		t.Fatal("a device report made the unit reachable while the upstream is down")
+	}
+	act(func() { s.p.upstreamUsable(s.ctx, true) })
+	if !reachable() {
+		t.Fatal("unit unreachable after the upstream is back")
+	}
+}

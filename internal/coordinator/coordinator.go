@@ -60,6 +60,11 @@ type Deps struct {
 	// of CONNECT.
 	HARuntime *publisher.Runtime
 
+	// Fabric is the Matter projection (internal/fabric): one more consumer of
+	// every reading and of what the backend reports about its upstream and
+	// its devices. nil when MATTER_ENABLED is off.
+	Fabric Projection
+
 	// StatePlane writes every status item. Required.
 	//
 	// It is built at the composition root (cmd/zendure2mqtt) rather than
@@ -67,6 +72,15 @@ type Deps struct {
 	// status-object encoding — is stated once, in [HAStateConfig], and the
 	// composition root and the fixtures both build from that.
 	StatePlane *publisher.StatePublisher
+}
+
+// Projection consumes what the coordinator receives from the backend beside
+// the MQTT side: each reading (a poll, a cloud report or the re-read after a
+// write) and the [source.Observer] calls. The coordinator stays the
+// backend's only observer and hands each call on.
+type Projection interface {
+	Reading(ctx context.Context, r source.Reading)
+	source.Observer
 }
 
 // Coordinator wires a backend to the MQTT broker.
@@ -538,6 +552,9 @@ const upstreamTimeout = 5 * time.Second
 // the backend reaches what it bridges and 1 while it does not. The runtime
 // publishes only a change, so a backend may report every poll.
 func (c *Coordinator) UpstreamUsable(usable bool) {
+	if c.deps.Fabric != nil {
+		c.deps.Fabric.UpstreamUsable(usable)
+	}
 	level := discovery.ConnectedBroker
 	if usable {
 		level = discovery.ConnectedOperational
@@ -553,6 +570,9 @@ func (c *Coordinator) UpstreamUsable(usable bool) {
 // `<name>/status/<sn>/online` item, a boolean status object deduplicated on
 // its value like every other.
 func (c *Coordinator) DeviceReachable(dev source.Device, reachable bool) {
+	if c.deps.Fabric != nil {
+		c.deps.Fabric.DeviceReachable(dev, reachable)
+	}
 	c.lastMu.Lock()
 	if c.reach == nil {
 		c.reach = map[string]bool{}
@@ -588,6 +608,9 @@ func (c *Coordinator) onReading(ctx context.Context, r source.Reading) {
 // publish resolves a report (catalogued points + virtual switches) and emits
 // each point's state plus, on first sight, the HA discovery configs.
 func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *model.Report) {
+	if c.deps.Fabric != nil {
+		c.deps.Fabric.Reading(ctx, source.Reading{Device: dev, Report: report})
+	}
 	points := process.Resolve(report, c.deps.Catalog)
 	points = append(points, c.switchPoints(report)...)
 

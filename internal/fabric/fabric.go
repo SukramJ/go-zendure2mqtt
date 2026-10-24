@@ -117,6 +117,7 @@ func softwareVersion(v string) uint32 {
 func (b *Bridge) Start(ctx context.Context) error {
 	b.p.addKnown(ctx)
 	if err := b.n.Start(ctx); err != nil {
+		_ = b.n.Stop(context.WithoutCancel(ctx)) // node.New already started its engine
 		return fmt.Errorf("matter: %w", err)
 	}
 	return nil
@@ -131,10 +132,19 @@ func (b *Bridge) Stop(ctx context.Context) error {
 // on first sight, takes the report's power and charge level.
 func (b *Bridge) Reading(ctx context.Context, r source.Reading) { b.p.reading(ctx, r) }
 
-// UpstreamUsable implements the coordinator's projection: once the backend's
-// upstream is usable its device list is complete, and the node is told so.
+// UpstreamUsable implements the coordinator's projection: while the backend's
+// upstream is down every unit is unreachable; once it is usable its device
+// list is complete, and the node is told so.
 func (b *Bridge) UpstreamUsable(usable bool) {
+	ctx := context.Background()
 	if usable {
-		b.p.markComplete(context.Background())
+		b.p.markComplete(ctx)
 	}
+	b.p.upstreamUsable(ctx, usable)
+}
+
+// DeviceReachable implements the coordinator's projection: the unit's
+// BridgedDeviceBasicInformation Reachable follows the backend's word.
+func (b *Bridge) DeviceReachable(dev source.Device, reachable bool) {
+	b.p.deviceReachable(context.Background(), dev, reachable)
 }
