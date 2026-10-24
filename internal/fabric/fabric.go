@@ -23,6 +23,7 @@ import (
 	"github.com/SukramJ/go-fabric/node"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/version"
 )
 
@@ -41,23 +42,27 @@ var spake2Salt = []byte("go-zendure2mqtt-spake2p")
 const spake2Iterations = 1000
 
 // Bridge is the daemon's Matter node: built by [New] from the config, started
-// with the daemon and stopped with it.
+// with the daemon and stopped with it, with the backend's devices under its
+// Aggregator.
 type Bridge struct {
 	n      *node.Node
+	p      *projection
 	logger *slog.Logger
 }
 
-// New builds the node from the MATTER_* block. It does not bind a socket
-// yet; [Bridge.Start] does. An error is a startup error of the daemon.
-func New(cfg *config.Config, logger *slog.Logger) (*Bridge, error) {
+// New builds the node from the MATTER_* block. devices is the backend's
+// device list ([source.Source.Devices]), read at [Bridge.Start] and once the
+// backend's upstream is usable. It does not bind a socket yet;
+// [Bridge.Start] does. An error is a startup error of the daemon.
+func New(cfg *config.Config, devices func() []source.Device, logger *slog.Logger) (*Bridge, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	n, err := node.New(NodeConfig(cfg, logger))
+	n, err := node.New(NodeConfig(cfg, logger)) //nolint:contextcheck // the node's constructor takes no context
 	if err != nil {
 		return nil, fmt.Errorf("matter: %w", err)
 	}
-	return &Bridge{n: n, logger: logger}, nil
+	return &Bridge{n: n, p: newProjection(n.Aggregator(), devices, logger), logger: logger}, nil
 }
 
 // NodeConfig is the node's configuration from the MATTER_* block: the listen
@@ -106,9 +111,11 @@ func softwareVersion(v string) uint32 {
 	return out
 }
 
-// Start starts the node: it binds MATTER_LISTEN, advertises over mDNS and,
-// while no controller has paired, opens the commissioning window.
+// Start adds every device the backend lists now and starts the node: it
+// binds MATTER_LISTEN, advertises over mDNS and, while no controller has
+// paired, opens the commissioning window.
 func (b *Bridge) Start(ctx context.Context) error {
+	b.p.addKnown(ctx)
 	if err := b.n.Start(ctx); err != nil {
 		return fmt.Errorf("matter: %w", err)
 	}
@@ -118,4 +125,12 @@ func (b *Bridge) Start(ctx context.Context) error {
 // Stop stops the node and closes its store.
 func (b *Bridge) Stop(ctx context.Context) error {
 	return b.n.Stop(ctx)
+}
+
+// UpstreamUsable implements the coordinator's projection: once the backend's
+// upstream is usable its device list is complete, and the node is told so.
+func (b *Bridge) UpstreamUsable(usable bool) {
+	if usable {
+		b.p.markComplete(context.Background())
+	}
 }

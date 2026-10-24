@@ -26,15 +26,23 @@ func facade(path string) bool {
 	}
 	rest := strings.TrimPrefix(path, mod)
 	switch rest {
-	case "node", "device", "contract", "fabrictest":
+	case "node", "device", "contract":
 		return true
 	}
 	return strings.HasPrefix(rest, "cluster/spec/") && !strings.Contains(strings.TrimPrefix(rest, "cluster/spec/"), "/")
 }
 
+// testOnly are the facade packages a test of the projection uses: the
+// in-process site and the controller's path builders.
+var testOnly = map[string]bool{
+	"github.com/SukramJ/go-fabric/fabrictest":        true,
+	"github.com/SukramJ/go-fabric/controller/client": true,
+}
+
 // TestFabricImportsOnlyTheFacade: the package imports go-fabric's facade
-// alone (node, device, contract, cluster/spec/<cluster>; fabrictest in
-// tests), the rule go-fabric's script/archcheck holds for its examples.
+// alone (node, device, contract, cluster/spec/<cluster>; fabrictest and
+// controller/client in tests), the rule go-fabric's script/archcheck holds
+// for its examples.
 func TestFabricImportsOnlyTheFacade(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -52,8 +60,11 @@ func TestFabricImportsOnlyTheFacade(t *testing.T) {
 		}
 		for _, imp := range f.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
-			if path == "github.com/SukramJ/go-fabric/fabrictest" && !strings.HasSuffix(name, "_test.go") {
-				t.Errorf("%s imports %s outside a test", name, path)
+			if testOnly[path] {
+				if !strings.HasSuffix(name, "_test.go") {
+					t.Errorf("%s imports %s outside a test", name, path)
+				}
+				continue
 			}
 			if !facade(path) {
 				t.Errorf("%s imports %s, below go-fabric's facade", name, path)
