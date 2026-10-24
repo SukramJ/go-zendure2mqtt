@@ -244,15 +244,23 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 	})
 
 	// --- mqtt-smarthome instance: <name>/info and <name>/maintenance/… ---
+	extra := map[string]any{
+		"commit":     version.Commit,
+		"build_date": version.BuildDate,
+		"connection": cfg.Connection,
+	}
+	// The Matter pairing codes ride on the retained instance info, where the
+	// daemon states itself: a dashboard or an operator reads them there.
+	if matter != nil {
+		if qr, manual, perr := matter.PairingCodes(); perr == nil {
+			extra["matter_manual_code"], extra["matter_qr_payload"] = manual, qr
+		}
+	}
 	instance := publisher.NewInstance(hagomqtt.Split(breaker, mqttClient), publisher.InstanceConfig{
-		Layout:  topics,
-		Name:    "go-zendure2mqtt",
-		Version: version.Version,
-		Extra: map[string]any{
-			"commit":     version.Commit,
-			"build_date": version.BuildDate,
-			"connection": cfg.Connection,
-		},
+		Layout:              topics,
+		Name:                "go-zendure2mqtt",
+		Version:             version.Version,
+		Extra:               extra,
 		MaintenanceDisabled: !cfg.MaintenanceEnabled(),
 		SetLogLevel:         publisher.LevelVarSetter(level),
 		Supervised:          publisher.DetectSupervised(supervisedEnv),
@@ -289,11 +297,16 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 	g.Go(func() error { return coord.Run(gctx) })
 	go func() { _ = instance.RunStats(gctx) }() // ErrStatsOff when disabled; never fatal
 
+	var pairing func() (string, string, error)
+	if matter != nil {
+		pairing = matter.PairingCodes
+	}
 	if cfg.WebEnable {
 		srv := web.New(web.Deps{
 			Cfg:           cfg,
 			Store:         store,
 			MQTTConnected: mqttClient.IsConnected,
+			MatterPairing: pairing,
 			Logger:        logger,
 		})
 		g.Go(func() error { return srv.Run(gctx) })

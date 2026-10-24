@@ -4,6 +4,7 @@
 package fabric
 
 import (
+	"context"
 	"go/parser"
 	"go/token"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )
 
 // facade is the part of go-fabric a daemon embeds: the node, the device kit,
@@ -95,5 +97,27 @@ func TestSoftwareVersion(t *testing.T) {
 		if got := softwareVersion(v); got != want {
 			t.Errorf("softwareVersion(%q) = %d, want %d", v, got, want)
 		}
+	}
+}
+
+// TestBridgePairingCodes: the bridge built from the block answers the pairing
+// codes of its passcode and discriminator, before it binds a socket.
+func TestBridgePairingCodes(t *testing.T) {
+	cfg, err := config.Load(strings.NewReader("MQTT_SERVER: broker\nMATTER_ENABLED: true\n"+
+		"MATTER_STORE_PATH: "+filepath.Join(t.TempDir(), "fabric.db")+"\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(cfg, func() []source.Device { return nil }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = b.Stop(context.Background()) })
+	qr, manual, err := b.PairingCodes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(qr, "MT:") || len(manual) != 11 {
+		t.Errorf("pairing codes %q, %q", qr, manual)
 	}
 }

@@ -120,7 +120,18 @@ func (b *Bridge) Start(ctx context.Context) error {
 		_ = b.n.Stop(context.WithoutCancel(ctx)) // node.New already started its engine
 		return fmt.Errorf("matter: %w", err)
 	}
+	if qr, manual, err := b.PairingCodes(); err == nil {
+		b.logger.Info("zendure2mqtt.matter_pairing",
+			slog.String("manual_code", manual), slog.String("qr_payload", qr),
+			slog.String("hint", "pair from a Matter controller with the manual code or a QR code of the payload; the commissioning window is open while no controller has paired"))
+	}
 	return nil
+}
+
+// PairingCodes returns the QR payload and the manual pairing code of the
+// configured passcode and discriminator.
+func (b *Bridge) PairingCodes() (qr, manual string, err error) {
+	return b.n.PairingCodes()
 }
 
 // Stop stops the node and closes its store.

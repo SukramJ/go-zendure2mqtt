@@ -33,6 +33,9 @@ type Deps struct {
 	Cfg           *config.Config
 	Store         *state.Store
 	MQTTConnected func() bool // nil → reported as unknown/false
+	// MatterPairing returns the Matter pairing codes (QR payload, manual
+	// code); nil when MATTER_ENABLED is off.
+	MatterPairing func() (qr, manual string, err error)
 	Logger        *slog.Logger
 }
 
@@ -41,6 +44,7 @@ type Server struct {
 	cfg     *config.Config
 	store   *state.Store
 	mqttUp  func() bool
+	pairing func() (qr, manual string, err error)
 	log     *slog.Logger
 	handler http.Handler
 }
@@ -55,7 +59,7 @@ func New(d Deps) *Server {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	s := &Server{cfg: cfg, store: d.Store, mqttUp: d.MQTTConnected, log: log}
+	s := &Server{cfg: cfg, store: d.Store, mqttUp: d.MQTTConnected, pairing: d.MatterPairing, log: log}
 	s.handler = s.withAuth(s.routes())
 	return s
 }
