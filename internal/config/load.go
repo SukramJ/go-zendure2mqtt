@@ -35,7 +35,11 @@ func (OSEnv) Environ() []string { return os.Environ() }
 
 // Load reads a config from r, applies ZENDURE_* overrides from env, fills
 // defaults, and validates the result.
-func Load(r io.Reader, env Env) (*Config, error) {
+func Load(r io.Reader, env Env) (*Config, error) { return load(r, env, "") }
+
+// load is [Load] for a config read from a file in dir ("" for none): the
+// defaults that name a file put it there.
+func load(r io.Reader, env Env, dir string) (*Config, error) {
 	var raw map[string]any
 	if err := yaml.NewDecoder(r).Decode(&raw); err != nil {
 		if errors.Is(err, io.EOF) {
@@ -62,7 +66,7 @@ func Load(r io.Reader, env Env) (*Config, error) {
 		return nil, fmt.Errorf("config: decode merged config: %w", err)
 	}
 
-	applyDefaults(&cfg)
+	applyDefaults(&cfg, dir)
 	if err := Validate(&cfg); err != nil {
 		return nil, err
 	}
@@ -76,7 +80,7 @@ func LoadFile(path string, env Env) (*Config, error) {
 		return nil, fmt.Errorf("config: open %s: %w", path, err)
 	}
 	defer func() { _ = f.Close() }()
-	return Load(f, env)
+	return load(f, env, filepath.Dir(path))
 }
 
 // Locate walks the standard search order (CWD → XDG/APPDATA → ~/.config)

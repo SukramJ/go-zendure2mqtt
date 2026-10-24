@@ -4,8 +4,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -91,6 +94,11 @@ func Validate(c *Config) error {
 		}
 	}
 
+	// --- Matter controllers ---
+	if c.MatterEnabled {
+		validateMatter(c, add)
+	}
+
 	// --- Localisation ---
 	if !allowedLanguages[c.Language] {
 		add("LANGUAGE must be one of [de en], got %q", c.Language)
@@ -98,6 +106,67 @@ func Validate(c *Config) error {
 
 	if len(issues) > 0 {
 		return &ValidationError{Issues: issues}
+	}
+	return nil
+}
+
+// matterLabelMax is BasicInformation's NodeLabel bound (max 32).
+const matterLabelMax = 32
+
+// validateMatter checks the MATTER_* block of an enabled bridge: an address
+// the node can bind, a store file it can open, and the commissioning and
+// identity values the Matter node refuses.
+func validateMatter(c *Config, add func(format string, args ...any)) {
+	if err := validateHostPort(c.MatterListen); err != nil {
+		add("MATTER_LISTEN %v", err)
+	}
+	if err := validateStorePath(c.MatterStorePath); err != nil {
+		add("MATTER_STORE_PATH %v", err)
+	}
+	if !validPasscode(c.MatterPasscode) {
+		add("MATTER_PASSCODE must be 1..99999998 and none of the trivial passcodes (11111111, 12345678, …), got %d", c.MatterPasscode)
+	}
+	if d := c.MatterDiscriminatorValue(); d < 0 || d > 0xFFF {
+		add("MATTER_DISCRIMINATOR must be 0..4095, got %d", d)
+	}
+	if c.MatterVendorID < 1 || c.MatterVendorID > 0xFFFF {
+		add("MATTER_VENDOR_ID must be 1..65535, got %d", c.MatterVendorID)
+	}
+	if c.MatterProductID < 1 || c.MatterProductID > 0xFFFF {
+		add("MATTER_PRODUCT_ID must be 1..65535, got %d", c.MatterProductID)
+	}
+	if l := strings.TrimSpace(c.MatterLabel); l == "" || len(c.MatterLabel) > matterLabelMax {
+		add("MATTER_LABEL must be 1..%d bytes, got %q", matterLabelMax, c.MatterLabel)
+	}
+}
+
+// validPasscode is the Matter setup-passcode rule go-fabric's node.Config.Validate
+// applies (secure/setup.IsValidSetupPIN, its 99999998 bound): 1 to
+// 99999998, and none of the trivial values.
+func validPasscode(p int) bool {
+	switch p {
+	case 11111111, 22222222, 33333333, 44444444, 55555555, 66666666, 77777777, 88888888, 12345678, 87654321:
+		return false
+	}
+	return p >= 1 && p <= 99999998
+}
+
+// validateStorePath checks that path names a file the node can create or
+// open: not empty, not a directory, in a directory that exists.
+func validateStorePath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("must name a file")
+	}
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		return fmt.Errorf("%q is a directory, want a file", path)
+	}
+	dir := filepath.Dir(path)
+	st, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("directory %q of %q: %w", dir, path, err)
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("%q is not a directory", dir)
 	}
 	return nil
 }

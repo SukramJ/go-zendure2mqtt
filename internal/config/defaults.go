@@ -3,6 +3,8 @@
 
 package config
 
+import "path/filepath"
+
 // Default values applied when the YAML omits a field. The MQTT server has
 // no default and is caught by [Validate] when missing.
 const (
@@ -33,12 +35,33 @@ const (
 
 	// DefaultLanguage is the fallback HA display language.
 	DefaultLanguage = "en"
+
+	// DefaultMatterListen is the Matter operational port on every interface.
+	DefaultMatterListen = ":5540"
+	// DefaultMatterStoreFile is the node's SQLite file, placed next to the
+	// config file (the daemon's only persistent state) when
+	// MATTER_STORE_PATH is unset, and in the working directory when the
+	// daemon runs from the environment alone.
+	DefaultMatterStoreFile = "zendure2mqtt-fabric.db"
+	// DefaultMatterPasscode and DefaultMatterDiscriminator are the values
+	// go-fabric's reference bridge pairs with. They are public: change the
+	// passcode before a bridge leaves a test network.
+	DefaultMatterPasscode      = 20202021
+	DefaultMatterDiscriminator = 3840
+	// DefaultMatterVendorID / DefaultMatterProductID are the CSA test vendor
+	// and the product id go-fabric's reference bridge uses with it.
+	DefaultMatterVendorID  = 0xFFF1
+	DefaultMatterProductID = 0x8001
+	// DefaultMatterLabel is the bridge's NodeLabel: the daemon's name.
+	DefaultMatterLabel = "zendure2mqtt"
 )
 
 // applyDefaults fills in any field left at its zero value with the
 // documented default. Connection parameters without a default are left at
-// zero and caught by [Validate].
-func applyDefaults(c *Config) {
+// zero and caught by [Validate]. dir is the config file's directory, empty
+// for a config that did not come from a file; the Matter store defaults to
+// a file there.
+func applyDefaults(c *Config, dir string) {
 	if c.Connection == "" {
 		c.Connection = DefaultConnection
 	}
@@ -80,5 +103,27 @@ func applyDefaults(c *Config) {
 	}
 	if c.Language == "" {
 		c.Language = DefaultLanguage
+	}
+	if c.MatterListen == "" {
+		c.MatterListen = DefaultMatterListen
+	}
+	if c.MatterStorePath == "" {
+		c.MatterStorePath = filepath.Join(dir, DefaultMatterStoreFile)
+	}
+	if c.MatterPasscode == 0 {
+		c.MatterPasscode = DefaultMatterPasscode
+	}
+	if c.MatterDiscriminator == nil {
+		v := DefaultMatterDiscriminator
+		c.MatterDiscriminator = &v
+	}
+	if c.MatterVendorID == 0 {
+		c.MatterVendorID = DefaultMatterVendorID
+	}
+	if c.MatterProductID == 0 {
+		c.MatterProductID = DefaultMatterProductID
+	}
+	if c.MatterLabel == "" {
+		c.MatterLabel = DefaultMatterLabel
 	}
 }
