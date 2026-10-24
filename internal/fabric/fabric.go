@@ -127,6 +127,10 @@ func (b *Bridge) Stop(ctx context.Context) error {
 	return b.n.Stop(ctx)
 }
 
+// Reading implements the coordinator's projection: the reading's unit, added
+// on first sight, takes the report's power and charge level.
+func (b *Bridge) Reading(ctx context.Context, r source.Reading) { b.p.reading(ctx, r) }
+
 // UpstreamUsable implements the coordinator's projection: once the backend's
 // upstream is usable its device list is complete, and the node is told so.
 func (b *Bridge) UpstreamUsable(usable bool) {

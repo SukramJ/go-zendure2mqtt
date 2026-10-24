@@ -39,10 +39,15 @@ type projection struct {
 	complete bool
 }
 
-// unit is one Zendure device as the node serves it.
+// unit is one Zendure device as the node serves it, with the power it
+// last set (the battery source keeps its own level).
 type unit struct {
 	dev     *device.ElectricalSensor
 	battery *battery
+
+	mu         sync.Mutex
+	power      int64
+	powerKnown bool
 }
 
 func newProjection(agg *node.Aggregator, devices func() []source.Device, logger *slog.Logger) *projection {
@@ -84,6 +89,11 @@ func newUnit(dev source.Device) (*unit, error) {
 			Null:                     []uint32{epmdef.AttrActivePower}, // unknown until the first reading
 		}},
 		device.Measurement(bat),
+		// The kit's battery server does not forward its source's
+		// notifications at v0.10.8, so the source relays them for the
+		// endpoint (device.WithChangeNotifier, "the relay is for a host
+		// model whose servers do not forward its notifications").
+		device.WithChangeNotifier(bat),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("matter: device %s: %w", dev.SN, err)

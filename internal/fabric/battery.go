@@ -17,8 +17,10 @@ import (
 // powersourcedef.Declare on an ElectricalSensor needs the next go-fabric
 // release; this source goes then.
 //
-// It is a [contract.ChangeNotifier], so a controller's subscription sees a
-// new level as soon as [battery.set] stores it.
+// It is a [contract.ChangeNotifier] the device relays for its endpoint
+// (device.WithChangeNotifier), so a controller's subscription sees a new level
+// as soon as [battery.set] stores it: v0.10.8's battery server does not
+// forward its source's notifications itself.
 type battery struct {
 	mu       sync.Mutex
 	level    float64
