@@ -31,7 +31,8 @@ go run ./cmd/zendure2mqtt-util cloud-login --token <app-token>
 go run ./cmd/zendure2mqtt-util discover
 ```
 
-Go ≥ 1.27, `CGO_ENABLED=0`. Minimal deps (`golang.org/x/sync`, `yaml.v3`) — keep it that way.
+Go ≥ 1.27, `CGO_ENABLED=0`. Minimal deps (`golang.org/x/sync`, `yaml.v3`, the shared
+`go-mqtt`/`go-hamqtt`/`go-ha-catalog`, and `go-fabric` for the optional Matter side) — keep it that way.
 
 ## Architecture
 
@@ -78,6 +79,14 @@ display label, discovery only), `writable`, `min`/`max`/`step`. `process.Resolve
 a report into `Point`s and expands `packData[]` into per-pack battery sub-entities;
 unmapped properties still publish under `…/misc/`. `process.Item` is the single source of
 the item path; `harender.Layout` (go-hamqtt `topic.SmartHome`) turns it into topics.
+
+### Matter projection (`internal/fabric`, optional)
+`MATTER_ENABLED` builds a go-fabric node (`fabric.New`) whose Aggregator serves one bridged
+ElectricalSensor per device (key `zendure:<SN>`): PowerSource from `electricLevel`,
+`ActivePower` from `gridInputPower − outputHomePower`, Reachable from the observer. The
+coordinator hands every reading and observer call to it (`Deps.Fabric`, a `Projection`).
+It imports go-fabric's facade only (`node`, `device`, `contract`, `cluster/spec/<x>`) —
+`TestFabricImportsOnlyTheFacade`. Read-only: no Matter write reaches the device.
 
 ### HA discovery (`internal/hass`)
 **Identity invariant (do not break):** `unique_id`, device identifiers and node ids are

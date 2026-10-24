@@ -1,3 +1,28 @@
+# Unreleased
+
+## Added
+
+- **Matter controllers (optional, off by default).** With
+  `MATTER_ENABLED: true` every Zendure device is also a bridged Matter
+  Electrical Sensor endpoint: its battery level (PowerSource
+  `BatPercentRemaining`), its AC power (`ActivePower`, grid input less home
+  output) and its reachability, for Apple Home, Home Assistant's Matter
+  integration and other Matter controllers. Read-only; writes stay on MQTT.
+  The manual pairing code and the QR payload are logged at start, carried
+  on `<name>/info` and shown in the web UI. New keys `MATTER_ENABLED`,
+  `MATTER_LISTEN`, `MATTER_STORE_PATH`, `MATTER_PASSCODE`,
+  `MATTER_DISCRIMINATOR`, `MATTER_VENDOR_ID`, `MATTER_PRODUCT_ID`,
+  `MATTER_LABEL` (see the README). The bridge is an uncertified test
+  device. Nothing changes for an installation that does not set
+  `MATTER_ENABLED`.
+
+## Changed
+
+- New dependency github.com/SukramJ/go-fabric v0.10.8 (Apache-2.0) and its
+  module graph (the pure-Go SQLite driver modernc.org/sqlite, zeroconf,
+  miekg/dns, x/net). `make licenses` ignores modernc.org/mathutil by name:
+  it is BSD-3-Clause, but go-licenses does not classify its LICENSE file.
+
 # Version 0.11.0 (2026-10-12)
 
 Dependency update; no behaviour change. Updating needs no other action.
