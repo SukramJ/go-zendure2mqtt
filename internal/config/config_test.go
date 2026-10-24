@@ -5,6 +5,8 @@ package config_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -191,5 +193,90 @@ func TestMaintenanceDefaultsAndOverrides(t *testing.T) {
 
 	if _, err := config.Load(strings.NewReader("MQTT_STATS_INTERVAL: -5\n"), fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}); err == nil {
 		t.Error("a negative MQTT_STATS_INTERVAL was accepted")
+	}
+}
+
+func TestMatterBlockIsOffByDefault(t *testing.T) {
+	cfg, err := config.Load(strings.NewReader("MQTT_SERVER: broker\n"), fakeEnv{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.MatterEnabled {
+		t.Error("MatterEnabled = true, want off by default")
+	}
+	if cfg.MatterListen != config.DefaultMatterListen || cfg.MatterPasscode != config.DefaultMatterPasscode ||
+		cfg.MatterDiscriminatorValue() != config.DefaultMatterDiscriminator ||
+		cfg.MatterVendorID != config.DefaultMatterVendorID || cfg.MatterProductID != config.DefaultMatterProductID ||
+		cfg.MatterLabel != config.DefaultMatterLabel || cfg.MatterStorePath != config.DefaultMatterStoreFile {
+		t.Errorf("Matter defaults = %q %d %d %#x %#x %q %q", cfg.MatterListen, cfg.MatterPasscode,
+			cfg.MatterDiscriminatorValue(), cfg.MatterVendorID, cfg.MatterProductID, cfg.MatterLabel, cfg.MatterStorePath)
+	}
+}
+
+func TestMatterStoreDefaultsNextToTheConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("MQTT_SERVER: broker\nMATTER_ENABLED: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.LoadFile(path, fakeEnv{})
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if want := filepath.Join(dir, config.DefaultMatterStoreFile); cfg.MatterStorePath != want {
+		t.Errorf("MatterStorePath = %q, want %q", cfg.MatterStorePath, want)
+	}
+}
+
+func TestMatterEnvOverrideKeepsAZeroDiscriminator(t *testing.T) {
+	env := fakeEnv{vals: map[string]string{
+		"ZENDURE_MQTT_SERVER":          "broker",
+		"ZENDURE_MATTER_ENABLED":       "true",
+		"ZENDURE_MATTER_DISCRIMINATOR": "0",
+		"ZENDURE_MATTER_PASSCODE":      "34567890",
+		"ZENDURE_MATTER_STORE_PATH":    filepath.Join(t.TempDir(), "fabric.db"),
+	}}
+	cfg, err := config.Load(strings.NewReader(""), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.MatterEnabled || cfg.MatterDiscriminatorValue() != 0 || cfg.MatterPasscode != 34567890 {
+		t.Errorf("enabled %v, discriminator %d, passcode %d", cfg.MatterEnabled, cfg.MatterDiscriminatorValue(), cfg.MatterPasscode)
+	}
+}
+
+func TestMatterEnabledRefusesUnusableValues(t *testing.T) {
+	dir := t.TempDir()
+	cases := map[string]string{
+		"MATTER_LISTEN":        "MATTER_LISTEN: \"5540\"\n",
+		"MATTER_STORE_PATH":    "MATTER_STORE_PATH: " + filepath.Join(dir, "missing", "fabric.db") + "\n",
+		"a directory":          "MATTER_STORE_PATH: " + dir + "\n",
+		"MATTER_PASSCODE":      "MATTER_PASSCODE: 12345678\n",
+		"MATTER_DISCRIMINATOR": "MATTER_DISCRIMINATOR: 4096\n",
+		"MATTER_VENDOR_ID":     "MATTER_VENDOR_ID: 70000\n",
+		"MATTER_PRODUCT_ID":    "MATTER_PRODUCT_ID: -1\n",
+		"MATTER_LABEL":         "MATTER_LABEL: " + strings.Repeat("x", 33) + "\n",
+	}
+	for name, block := range cases {
+		t.Run(name, func(t *testing.T) {
+			doc := "MQTT_SERVER: broker\nMATTER_ENABLED: true\n" + block
+			if !strings.Contains(block, "MATTER_STORE_PATH") {
+				doc += "MATTER_STORE_PATH: " + filepath.Join(dir, "fabric.db") + "\n"
+			}
+			_, err := config.Load(strings.NewReader(doc), fakeEnv{})
+			v, ok := errors.AsType[*config.ValidationError](err)
+			if !ok {
+				t.Fatalf("expected *ValidationError, got %v", err)
+			}
+			key := strings.TrimSuffix(strings.Fields(block)[0], ":")
+			if len(v.Issues) != 1 || !strings.HasPrefix(v.Issues[0], key) {
+				t.Errorf("issues = %v, want one about %s", v.Issues, key)
+			}
+		})
+	}
+	// Disabled, the same values are not judged: nothing changes for an
+	// installation that does not use the block.
+	if _, err := config.Load(strings.NewReader("MQTT_SERVER: broker\nMATTER_PASSCODE: 12345678\n"), fakeEnv{}); err != nil {
+		t.Errorf("disabled block judged: %v", err)
 	}
 }

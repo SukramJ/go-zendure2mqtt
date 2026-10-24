@@ -215,9 +215,14 @@ lint: ## run golangci-lint
 vuln: ## scan dependencies + reachable code for known vulnerabilities (govulncheck)
 	$(GOVULNCHECK) ./...
 
+# modernc.org/mathutil (go-fabric's SQLite driver pulls it in) is BSD-3-Clause
+# — its LICENSE file, checked by hand, and go-fabric's THIRD-PARTY-NOTICES.md —
+# but go-licenses' classifier does not recognise that file and reports it as an
+# error (go-licenses v1.6.0 still exits 0). It is ignored by name, so a real
+# finding is not lost in that line; every other module is still classified.
 .PHONY: licenses
 licenses: ## fail on copyleft dependency licenses (GPL/AGPL/LGPL forbidden; MPL = reciprocal)
-	$(GOLICENSES) check ./... --disallowed_types=forbidden,restricted,reciprocal
+	$(GOLICENSES) check ./... --disallowed_types=forbidden,restricted,reciprocal --ignore modernc.org/mathutil
 
 # Git mode: scans the tracked history, not just the working tree. A secret
 # committed once and reverted in the next commit is still in the history and

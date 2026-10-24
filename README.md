@@ -36,8 +36,12 @@ setup (pure Go, custom MQTT client, declarative catalog, distroless image).
   `/api/snapshot` (Home Assistant Ingress-friendly).
 - **mDNS discovery** + a diagnostic CLI (`zendure2mqtt-util`).
 - **Home Assistant add-on** — installable from this repo (see [addon/](addon/)).
-- **Pure Go** — only `gopkg.in/yaml.v3` and `golang.org/x/sync`; `CGO_ENABLED=0`,
-  static distroless image.
+- **Matter controllers (optional, off by default)** — each device as a bridged
+  Matter endpoint with its charge level and power, read-only (see
+  [Matter controllers](#matter-controllers)).
+- **Pure Go** — `gopkg.in/yaml.v3`, `golang.org/x/sync`, the shared MQTT/HA
+  modules and, for the Matter side, [go-fabric](https://github.com/SukramJ/go-fabric);
+  `CGO_ENABLED=0`, static distroless image.
 
 ## Quickstart
 
@@ -102,6 +106,66 @@ read-only dashboard is served on `WEB_BIND` (default `127.0.0.1:8080`).
 > The name also namespaces the Home Assistant identities — see
 > [Home Assistant identities](#home-assistant-identities) — so changing it
 > later re-keys every entity, exactly as it always has.
+
+## Matter controllers
+
+With `MATTER_ENABLED: true` the daemon also runs an in-process Matter bridge
+([go-fabric](https://github.com/SukramJ/go-fabric), Apache-2.0) next to the
+MQTT side. Apple Home, Home Assistant's Matter integration and other Matter
+controllers then see every Zendure device as one bridged **Electrical Sensor**
+endpoint:
+
+| Matter attribute | From | Unit |
+|---|---|---|
+| PowerSource `BatPercentRemaining` | `electricLevel` (battery level) | half-percent (`160` = 80 %) |
+| ElectricalPowerMeasurement `ActivePower` | `gridInputPower` − `outputHomePower` | mW, positive while the unit takes power from the grid, negative while it feeds the home |
+| BridgedDeviceBasicInformation `Reachable` | the device's `online`, and `false` for every device while `<name>/connected` is `1` | — |
+| BridgedDeviceBasicInformation `NodeLabel` | `DEVICE_NAME`, else `Zendure <SN>` (as in Home Assistant) | — |
+
+The endpoint is a sensor: nothing a controller does changes the device. The
+writable properties (limits, modes, the virtual switches) stay on MQTT; a later
+release may add an output-limit control once a Matter device type fits.
+
+**Pairing.** At start the daemon logs `zendure2mqtt.matter_pairing` with the
+manual pairing code and the QR payload; both are also in the retained
+`<name>/info` (`matter_manual_code`, `matter_qr_payload`), and the web UI shows
+the manual code. Enter the code in the controller's "add device" flow. The
+commissioning window is open while no controller has paired; once one has,
+the code pairs nothing until a controller opens a new window.
+**The default passcode (`20202021`) is public — set `MATTER_PASSCODE` to a
+value of your own before you pair.**
+
+**Not certified.** The bridge is an uncertified test device: it identifies as
+the CSA test vendor (`0xFFF1`) with go-fabric's test attestation chain, and a
+controller may warn of it when you pair it (Apple Home does). It is
+not certified by the Connectivity Standards Alliance, and nothing about it is
+Matter compliant, certified or similar.
+
+**Network and state.** The node needs UDP `MATTER_LISTEN` (default `:5540`),
+IPv6 and mDNS (multicast DNS on UDP 5353) on the LAN the controller is on — in
+Docker that means host networking (`--network host`). Its pairings live in the
+SQLite file `MATTER_STORE_PATH` (default `zendure2mqtt-fabric.db` next to the
+config file, so `/config/…` in the Docker image and `/data/…` in the add-on);
+losing the file unpairs the bridge from every controller. A unit keeps its
+Matter endpoint number across restarts. What a host minds when it runs the
+node: go-fabric's
+[operations page](https://github.com/SukramJ/go-fabric/blob/main/docs/guides/operations.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `MATTER_ENABLED` | `false` | Run the Matter bridge. Off, nothing of it is built. |
+| `MATTER_LISTEN` | `:5540` | UDP listen address of the node. |
+| `MATTER_STORE_PATH` | `zendure2mqtt-fabric.db` next to the config file | The node's SQLite file: pairings, access control, endpoint numbers. |
+| `MATTER_PASSCODE` | `20202021` | Setup passcode, 1..99999998, none of the trivial ones (`11111111`, `12345678`, …). |
+| `MATTER_DISCRIMINATOR` | `3840` | 12-bit commissioning discriminator, 0..4095. |
+| `MATTER_VENDOR_ID` | `0xFFF1` | Vendor id (the CSA test vendor). |
+| `MATTER_PRODUCT_ID` | `0x8001` | Product id. |
+| `MATTER_LABEL` | `zendure2mqtt` | The bridge's name in the controller (NodeLabel, up to 32 bytes). |
+
+With `MATTER_ENABLED: true` an unusable value (a listen address without a port,
+a store path in a directory that does not exist, a trivial passcode) refuses
+the start, and so does a node that fails to start; the daemon never runs
+without the Matter side it was asked for.
 
 ## MQTT topics
 

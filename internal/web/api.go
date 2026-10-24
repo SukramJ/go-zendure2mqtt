@@ -22,6 +22,10 @@ type health struct {
 	StartedAt     time.Time `json:"started_at"`
 	UptimeSeconds int64     `json:"uptime_seconds"`
 	Devices       int       `json:"devices"`
+	// MatterManualCode and MatterQRPayload are the Matter pairing codes,
+	// present only with MATTER_ENABLED.
+	MatterManualCode string `json:"matter_manual_code,omitempty"`
+	MatterQRPayload  string `json:"matter_qr_payload,omitempty"`
 }
 
 // handleHealth reports build, connectivity and uptime.
@@ -31,7 +35,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	if s.mqttUp != nil {
 		mqttUp = s.mqttUp()
 	}
-	s.writeJSON(w, health{
+	h := health{
 		Version:       version.String(),
 		Connection:    s.cfg.Connection,
 		Language:      s.cfg.Language,
@@ -40,7 +44,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		StartedAt:     snap.StartedAt,
 		UptimeSeconds: int64(time.Since(snap.StartedAt).Seconds()),
 		Devices:       len(snap.Devices),
-	})
+	}
+	if s.pairing != nil {
+		if qr, manual, err := s.pairing(); err == nil {
+			h.MatterQRPayload, h.MatterManualCode = qr, manual
+		}
+	}
+	s.writeJSON(w, h)
 }
 
 // handleSnapshot returns the latest resolved values per device.

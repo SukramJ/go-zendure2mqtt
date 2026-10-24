@@ -120,6 +120,32 @@ type Config struct {
 	WebUser     string `yaml:"WEB_USER"`
 	WebPassword string `yaml:"WEB_PASSWORD"`
 
+	// --- Matter controllers (optional; off by default) ---
+	// MatterEnabled exposes every device to Matter controllers (Apple Home,
+	// Home Assistant's Matter integration, …) as one bridged endpoint of an
+	// in-process go-fabric node. Off, nothing of it is built.
+	MatterEnabled bool `yaml:"MATTER_ENABLED"`
+	// MatterListen is the node's UDP listen address ("host:port"; empty host
+	// is every interface).
+	MatterListen string `yaml:"MATTER_LISTEN"`
+	// MatterStorePath is the SQLite file the node keeps its fabrics (the
+	// pairings), access control and endpoint numbers in. Losing it unpairs
+	// the bridge from every controller.
+	MatterStorePath string `yaml:"MATTER_STORE_PATH"`
+	// MatterPasscode is the setup passcode the pairing code carries.
+	MatterPasscode int `yaml:"MATTER_PASSCODE"`
+	// MatterDiscriminator is the 12-bit commissioning discriminator. A
+	// pointer because 0 is a valid discriminator.
+	MatterDiscriminator *int `yaml:"MATTER_DISCRIMINATOR"`
+	// MatterVendorID / MatterProductID are the node's vendor and product id.
+	// The defaults are the CSA test vendor's: the bridge is an uncertified
+	// test device.
+	MatterVendorID  int `yaml:"MATTER_VENDOR_ID"`
+	MatterProductID int `yaml:"MATTER_PRODUCT_ID"`
+	// MatterLabel is the node's NodeLabel, the name a controller shows for
+	// the bridge.
+	MatterLabel string `yaml:"MATTER_LABEL"`
+
 	// --- Localisation ---
 	// Language selects the HA display language: "en" (default) or "de". It
 	// localises friendly names; topics and entity_ids stay language-neutral.
@@ -172,6 +198,15 @@ func (c *Config) CloudConfigured() bool { return c.CloudAppToken != "" }
 // RefreshDuration returns the local poll interval as a duration.
 func (c *Config) RefreshDuration() time.Duration {
 	return time.Duration(c.Refresh) * time.Second
+}
+
+// MatterDiscriminatorValue returns MATTER_DISCRIMINATOR, or the default when
+// unset.
+func (c *Config) MatterDiscriminatorValue() int {
+	if c.MatterDiscriminator == nil {
+		return DefaultMatterDiscriminator
+	}
+	return *c.MatterDiscriminator
 }
 
 // ChargeActiveW returns the charge power limit (W), or the default when unset.

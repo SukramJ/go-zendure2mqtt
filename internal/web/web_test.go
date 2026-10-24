@@ -82,3 +82,23 @@ func TestBasicAuth(t *testing.T) {
 		t.Errorf("wrong creds: status = %d, want 401", rr.Code)
 	}
 }
+
+func TestHealthCarriesTheMatterPairingCode(t *testing.T) {
+	s := web.New(web.Deps{
+		Cfg:           &config.Config{Connection: "local", Language: "en"},
+		Store:         state.New(),
+		MatterPairing: func() (string, string, error) { return "MT:Y.K90AFN00KA0648G00", "34970112332", nil },
+	})
+	rr := do(s, httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody))
+	var h map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &h); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if h["matter_manual_code"] != "34970112332" || h["matter_qr_payload"] != "MT:Y.K90AFN00KA0648G00" {
+		t.Errorf("health %v, want the pairing codes", h)
+	}
+	rr = do(newServer("", ""), httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody))
+	if strings.Contains(rr.Body.String(), "matter_") {
+		t.Errorf("health without MATTER_ENABLED carries %s", rr.Body.String())
+	}
+}

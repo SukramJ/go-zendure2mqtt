@@ -36,7 +36,8 @@ function el(tag, attrs, ...kids) {
 function renderHealth(h) {
   document.getElementById("mqtt-dot").className = "dot " + (h.mqtt_connected ? "up" : "down");
   document.getElementById("meta").textContent =
-    `${h.connection} · MQTT ${h.mqtt_server} ${h.mqtt_connected ? "✓" : "✗"} · ${h.devices} device(s) · up ${fmtUptime(h.uptime_seconds)}`;
+    `${h.connection} · MQTT ${h.mqtt_server} ${h.mqtt_connected ? "✓" : "✗"} · ${h.devices} device(s) · up ${fmtUptime(h.uptime_seconds)}` +
+    (h.matter_manual_code ? ` · Matter pairing code ${h.matter_manual_code}` : "");
   document.getElementById("version").textContent = h.version;
 }
 

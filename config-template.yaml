@@ -61,6 +61,22 @@ WEB_BIND: "127.0.0.1:8080"
 WEB_USER: ""
 WEB_PASSWORD: ""
 
+# --- Matter controllers (optional; off by default) ---
+# Exposes every device as a bridged Matter endpoint (charge level and power,
+# read-only) to Apple Home, Home Assistant's Matter integration and other
+# Matter controllers. The bridge is an uncertified test device (CSA test
+# vendor). Needs UDP MATTER_LISTEN, IPv6 and mDNS on the LAN.
+MATTER_ENABLED: false
+# MATTER_LISTEN: ":5540"
+# The node's SQLite file (its pairings); default next to this file.
+# MATTER_STORE_PATH: zendure2mqtt-fabric.db
+# The default passcode is public: set your own before pairing for real.
+# MATTER_PASSCODE: 20202021
+# MATTER_DISCRIMINATOR: 3840
+# MATTER_VENDOR_ID: 0xFFF1
+# MATTER_PRODUCT_ID: 0x8001
+# MATTER_LABEL: zendure2mqtt
+
 # --- Misc ---
 LANGUAGE: en   # en | de
 DEBUG: false

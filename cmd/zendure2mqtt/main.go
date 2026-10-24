@@ -28,6 +28,7 @@ import (
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
 	"github.com/SukramJ/go-zendure2mqtt/internal/coordinator"
+	"github.com/SukramJ/go-zendure2mqtt/internal/fabric"
 	"github.com/SukramJ/go-zendure2mqtt/internal/harender"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
@@ -193,6 +194,35 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 			harender.Renderer{Topics: topics, IdentityRoot: cfg.IdentityRoot(), Lang: cfg.Language}, haRuntime, logger)
 	}
 
+	// --- Matter controllers (optional) ---
+	//
+	// Built and started before the coordinator runs the backend, so every
+	// configured device is under the node's Aggregator before the first
+	// reading. A failure is a startup error: an operator who enabled the
+	// block gets the daemon's exit, never a daemon without its Matter side.
+	var projection coordinator.Projection
+	var matter *fabric.Bridge
+	if cfg.MatterEnabled {
+		if matter, err = fabric.New(cfg, backend.Devices, logger); err != nil {
+			return err
+		}
+		if err := matter.Start(ctx); err != nil {
+			return err
+		}
+		// Deferred after the MQTT lifecycle's stop, so it runs before it: on
+		// the graceful path after the backend has stopped and the offline
+		// marker is out, on an early return as well. Bounded like the MQTT
+		// stop.
+		defer func() {
+			stopCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
+			defer stop()
+			if serr := matter.Stop(stopCtx); serr != nil {
+				logger.Warn("zendure2mqtt.matter_stop_failed", slog.String("err", serr.Error()))
+			}
+		}()
+		projection = matter
+	}
+
 	// --- Diagnostic web UI state cache (only when the web UI is enabled) ---
 	var store *state.Store
 	if cfg.WebEnable {
@@ -210,18 +240,27 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 		Logger:     logger,
 		HARuntime:  haRuntime,
 		StatePlane: statePlane,
+		Fabric:     projection,
 	})
 
 	// --- mqtt-smarthome instance: <name>/info and <name>/maintenance/… ---
+	extra := map[string]any{
+		"commit":     version.Commit,
+		"build_date": version.BuildDate,
+		"connection": cfg.Connection,
+	}
+	// The Matter pairing codes ride on the retained instance info, where the
+	// daemon states itself: a dashboard or an operator reads them there.
+	if matter != nil {
+		if qr, manual, perr := matter.PairingCodes(); perr == nil {
+			extra["matter_manual_code"], extra["matter_qr_payload"] = manual, qr
+		}
+	}
 	instance := publisher.NewInstance(hagomqtt.Split(breaker, mqttClient), publisher.InstanceConfig{
-		Layout:  topics,
-		Name:    "go-zendure2mqtt",
-		Version: version.Version,
-		Extra: map[string]any{
-			"commit":     version.Commit,
-			"build_date": version.BuildDate,
-			"connection": cfg.Connection,
-		},
+		Layout:              topics,
+		Name:                "go-zendure2mqtt",
+		Version:             version.Version,
+		Extra:               extra,
 		MaintenanceDisabled: !cfg.MaintenanceEnabled(),
 		SetLogLevel:         publisher.LevelVarSetter(level),
 		Supervised:          publisher.DetectSupervised(supervisedEnv),
@@ -250,18 +289,24 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 
 	logger.Info("zendure2mqtt.starting",
 		slog.String("connection", cfg.Connection), slog.String("mqtt", cfg.MQTTServer),
-		slog.Bool("hass", cfg.HASSEnable), slog.Bool("web", cfg.WebEnable), slog.String("lang", cfg.Language),
+		slog.Bool("hass", cfg.HASSEnable), slog.Bool("web", cfg.WebEnable), slog.Bool("matter", cfg.MatterEnabled),
+		slog.String("lang", cfg.Language),
 		slog.String("name", cfg.MQTTTopic), slog.Bool("maintenance", instance.Maintenance()))
 
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return coord.Run(gctx) })
 	go func() { _ = instance.RunStats(gctx) }() // ErrStatsOff when disabled; never fatal
 
+	var pairing func() (string, string, error)
+	if matter != nil {
+		pairing = matter.PairingCodes
+	}
 	if cfg.WebEnable {
 		srv := web.New(web.Deps{
 			Cfg:           cfg,
 			Store:         store,
 			MQTTConnected: mqttClient.IsConnected,
+			MatterPairing: pairing,
 			Logger:        logger,
 		})
 		g.Go(func() error { return srv.Run(gctx) })
