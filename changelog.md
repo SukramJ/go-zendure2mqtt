@@ -1,3 +1,12 @@
+# Unreleased
+
+## Security
+
+- Built with Go 1.27.3: GO-2026-6809 (`crypto/x509`, fixed in 1.27.3) is
+  reachable through the cloud backend's TLS connect (`cloud.Backend.connectLoop`
+  → `mqtt.TCPClient.Connect`), which govulncheck reports on 1.27.2. go.mod,
+  the workflows and both Dockerfiles move together.
+
 # Version 0.11.0 (2026-10-12)
 
 Dependency update; no behaviour change. Updating needs no other action.
