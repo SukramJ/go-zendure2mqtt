@@ -5,6 +5,11 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.14.0
+
+The web panel is now the shared go-bridgeui dashboard, the same as in the
+M-TEC and KEBA add-ons. It looks and works as before.
+
 ## 0.13.0
 
 New web panel, the same as in the M-TEC and KEBA add-ons: status and

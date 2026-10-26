@@ -1,3 +1,20 @@
+# Version 0.14.0 (2026-10-26)
+
+The web UI moves into the shared go-bridgeui module. MQTT and Home
+Assistant are unchanged.
+
+## Changed
+
+- **go-bridgeui.** The dashboard of 0.13.0 is now the shared
+  [go-bridgeui](https://github.com/SukramJ/go-bridgeui) module (v0.1.0),
+  which go-mtec2mqtt and go-keba2mqtt embed as well. It looks and works as
+  before.
+- **API.** `POST /api/write` names the unit as `device` instead of `sn`:
+  `{"device","key","value"}`. `/api/health`, `/api/status` and
+  `/api/snapshot` have go-bridgeui's shape (devices with `id`, entries with
+  `key` and `sub` for the pack), `/api/config` returns display tiles, and
+  `/api/ui` is new.
+
 # Version 0.13.0 (2026-10-26)
 
 The web UI catches up with go-mtec2mqtt and go-keba2mqtt. MQTT and Home

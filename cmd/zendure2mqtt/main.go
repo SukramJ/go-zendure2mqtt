@@ -264,6 +264,7 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 			Bind:     cfg.WebBind,
 			User:     cfg.WebUser,
 			Password: cfg.WebPassword,
+			Language: cfg.Language,
 			Logger:   logger,
 		}, coord)
 		g.Go(func() error { return srv.Run(gctx) })
