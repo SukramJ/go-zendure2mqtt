@@ -13,6 +13,7 @@
 #   unit          unit of measurement
 #   offset/scale  value = (raw - offset) / scale   (e.g. 0.1K→°C: offset 2731, scale 10)
 #   writable      true → property is settable (HA gets a command topic)
+#   confirm       true → the web UI asks before writing (operating mode, flash)
 #   min/max/step  bounds for writable number entities
 #   value_map     raw code → label (select entities; reversed on write)
 #   name/name_de  friendly names
@@ -143,6 +144,7 @@ entries:
     group: config
     platform: select
     writable: true
+    confirm: true
     value_map:
       "1": charge
       "2": discharge
@@ -208,6 +210,7 @@ entries:
     platform: number
     unit: W
     writable: true
+    confirm: true
     min: 0
     max: 2400
     step: 100
@@ -219,6 +222,7 @@ entries:
     group: config
     platform: select
     writable: true
+    confirm: true
     value_map:
       "0": persist
       "1": volatile

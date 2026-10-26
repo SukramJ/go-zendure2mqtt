@@ -13,6 +13,7 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -21,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/SukramJ/go-hamqtt/discovery"
@@ -48,6 +50,10 @@ type Deps struct {
 	HASS    *hass.Discovery // nil when HA discovery is disabled
 	State   *state.Store    // nil when the diagnostic web UI is disabled
 	Logger  *slog.Logger
+
+	// MQTTConnected reports the output broker link for the web UI's health;
+	// nil reads as disconnected.
+	MQTTConnected func() bool
 
 	// HARuntime owns this daemon's Home Assistant plane: the retained
 	// discovery configs it has published, the bridge availability marker
@@ -80,6 +86,11 @@ type Coordinator struct {
 
 	runCtx   context.Context //nolint:containedctx // captured for the subscription handler
 	switches []virtual.Switch
+
+	// running is set once Run has captured runCtx: the web UI's writes come
+	// from HTTP handlers that may run before it, and every write path reads
+	// runCtx.
+	running atomic.Bool
 
 	snMu sync.RWMutex // guards bySN (written by onReading, read by handleSet — different goroutines)
 	bySN map[string]source.Device
@@ -339,6 +350,7 @@ func HAStateConfig(name string, logger *slog.Logger) publisher.StateConfig {
 // Run starts the command router and drives the backend until ctx ends.
 func (c *Coordinator) Run(ctx context.Context) error {
 	c.runCtx = ctx
+	c.running.Store(true)
 	c.PublishOnline(ctx)
 
 	if err := c.startCommands(ctx); err != nil {
@@ -558,6 +570,9 @@ const upstreamTimeout = 5 * time.Second
 // the backend reaches what it bridges and 1 while it does not. The runtime
 // publishes only a change, so a backend may report every poll.
 func (c *Coordinator) UpstreamUsable(usable bool) {
+	if c.deps.State != nil {
+		c.deps.State.SetUpstream(usable)
+	}
 	level := discovery.ConnectedBroker
 	if usable {
 		level = discovery.ConnectedOperational
@@ -579,6 +594,9 @@ func (c *Coordinator) DeviceReachable(dev source.Device, reachable bool) {
 	}
 	c.reach[dev.SN] = reachable
 	c.lastMu.Unlock()
+	if c.deps.State != nil {
+		c.deps.State.SetOnline(dev.SN, reachable)
+	}
 	ctx, cancel := c.callbackContext()
 	defer cancel()
 	c.publishState(ctx, c.topics.Online(dev.SN), reachable)
@@ -931,37 +949,36 @@ func (c *Coordinator) handleSet(ctx context.Context, cmd publisher.Command, v pu
 		return
 	}
 	sn, leaf := cmd.Wildcards[0], cmd.Wildcards[2]
-	reject := func(event string, attrs ...slog.Attr) {
-		attrs = append([]slog.Attr{
-			slog.String("topic", cmd.Topic), slog.String("payload", string(cmd.Payload)),
-		}, attrs...)
-		c.logger.LogAttrs(ctx, slog.LevelWarn, event, attrs...)
+	if err := c.applySet(ctx, sn, leaf, v, cmd.Topic); err != nil {
+		c.rejectSet(ctx, sn, cmd.Topic, string(cmd.Payload), err)
 	}
+}
 
+// applySet writes one catalog property or virtual switch of the device sn —
+// the one write path of a `set` item, whether it arrived over MQTT
+// ([Coordinator.handleSet]) or from the web UI ([Coordinator.Write]). origin
+// names the request in the success log line.
+func (c *Coordinator) applySet(ctx context.Context, sn, leaf string, v publisher.SetValue, origin string) error {
 	c.snMu.RLock()
 	dev, ok := c.bySN[sn]
 	c.snMu.RUnlock()
 	if !ok {
-		reject("coordinator.set_unknown_device", slog.String("sn", sn))
-		return
+		return &setError{event: "coordinator.set_unknown_device", kind: state.ErrUnknownDevice, attrs: []slog.Attr{slog.String("sn", sn)}}
 	}
 
 	props, ok := c.switchProps(leaf, v)
 	if !ok {
 		entry, known := c.deps.Catalog.ByTopic(leaf)
 		if !known || !entry.Writable {
-			reject("coordinator.set_not_writable")
-			return
+			return &setError{event: "coordinator.set_not_writable", kind: state.ErrNotWritable}
 		}
 		value, valid := decodeSet(entry, v)
 		if !valid {
-			reject("coordinator.set_rejected", slog.String("property", entry.Property))
-			return
+			return &setError{event: "coordinator.set_rejected", kind: state.ErrInvalidValue, attrs: []slog.Attr{slog.String("property", entry.Property)}}
 		}
 		props = map[string]any{entry.Property: value}
 	} else if props == nil {
-		reject("coordinator.set_rejected", slog.String("switch", leaf))
-		return
+		return &setError{event: "coordinator.set_rejected", kind: state.ErrInvalidValue, attrs: []slog.Attr{slog.String("switch", leaf)}}
 	}
 
 	// Bounded, and cut short when the daemon stops: the router's handler
@@ -970,11 +987,64 @@ func (c *Coordinator) handleSet(ctx context.Context, cmd publisher.Command, v pu
 	defer cancel()
 	defer context.AfterFunc(c.runCtx, cancel)() //nolint:contextcheck // cancels the write on shutdown; it derives no context
 	if err := c.deps.Backend.Write(wctx, dev, props); err != nil {
-		reject("coordinator.write_failed", slog.String("sn", sn), slog.String("err", err.Error()))
-		return
+		return &setError{event: "coordinator.write_failed", err: err, attrs: []slog.Attr{slog.String("sn", sn), slog.String("err", err.Error())}}
 	}
-	c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("topic", cmd.Topic))
+	c.logger.Info("coordinator.write", slog.String("sn", sn), slog.String("topic", origin))
 	c.reReadSoon(dev) //nolint:contextcheck // the re-read outlives this request; it is bounded by the daemon's lifetime
+	return nil
+}
+
+// setError is a refused or failed `set`: the log event it has always been
+// reported under, the attributes that go with it, and its class for the web
+// UI's status code.
+type setError struct {
+	event string
+	attrs []slog.Attr
+	// kind is one of the state.Err* classes, nil for a failed write.
+	kind error
+	// err is the backend's failure, nil for a refusal.
+	err error
+}
+
+func (e *setError) Error() string {
+	switch {
+	case e.err != nil:
+		return e.err.Error()
+	case e.kind != nil:
+		return e.kind.Error()
+	}
+	return e.event
+}
+
+func (e *setError) Unwrap() []error {
+	var out []error
+	if e.kind != nil {
+		out = append(out, e.kind)
+	}
+	if e.err != nil {
+		out = append(out, e.err)
+	}
+	return out
+}
+
+// rejectSet logs a refused or failed `set` at warn with what was asked
+// (spec §3.3), and records it in the web UI's problem log.
+func (c *Coordinator) rejectSet(ctx context.Context, sn, topic, payload string, err error) {
+	event := "coordinator.write_failed"
+	attrs := []slog.Attr{slog.String("topic", topic), slog.String("payload", payload)}
+	var se *setError
+	if errors.As(err, &se) {
+		event = se.event
+		attrs = append(attrs, se.attrs...)
+	} else {
+		attrs = append(attrs, slog.String("err", err.Error()))
+	}
+	c.logger.LogAttrs(ctx, slog.LevelWarn, event, attrs...)
+	if c.deps.State != nil {
+		c.deps.State.AddProblem(state.Problem{
+			SN: sn, Event: event, Detail: topic + " = " + payload + ": " + err.Error(),
+		})
+	}
 }
 
 // switchPoints builds synthetic switch points so the virtual switches flow

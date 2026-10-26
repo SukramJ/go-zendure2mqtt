@@ -1,3 +1,37 @@
+# Version 0.13.0 (2026-10-26)
+
+The web UI catches up with go-mtec2mqtt and go-keba2mqtt. MQTT and Home
+Assistant are unchanged.
+
+## Changed
+
+- **New dashboard.** The embedded UI now has the sibling bridges' layout:
+  a sidebar (Status · Live · Battery packs · evcc · Control · System), a
+  light/dark theme toggle, German and English (`LANGUAGE`), and a unit picker
+  when the bridge serves more than one SolarFlow. It updates live over
+  Server-Sent Events instead of polling every 5 seconds.
+- **Diagnostics.** Health shows the Zendure link (local/cloud), the MQTT
+  broker, Home Assistant, evcc and uptime; every unit shows whether it is
+  reachable and how old its data is; a "Recent problems" list shows refused
+  or failed commands, from MQTT and from the UI alike. The configuration
+  (without the cloud token or passwords) is shown under System.
+- **Control.** The unit's writable settings, the charge/discharge switches
+  and, with `EVCC_ENABLE`, the evcc battery mode can be set from the UI. A
+  write takes exactly the path of an MQTT `set` — same conversions, limits,
+  refusals and log lines. AC mode, smart mode, max inverter power and the
+  two switches ask for confirmation first (they change the operating mode or
+  what the unit stores in flash); the catalog marks them with the new
+  `confirm: true`.
+- **API.** New: `GET /api/status`, `/api/items`, `/api/config`, the SSE
+  stream `/api/events` and `POST /api/write` (`{"sn","key","value"}`, JSON
+  only, same-origin only). `/api/health` has a new shape (status, upstream,
+  problems); `/api/snapshot` is unchanged apart from the units' `online`.
+  Assets are served with a content-hash ETag, so a browser picks up a new UI
+  after an update.
+- **Security.** The UI can now write to the units: set `WEB_USER` /
+  `WEB_PASSWORD` when `WEB_BIND` is reachable beyond localhost. The add-on
+  serves the UI through Ingress, which authenticates.
+
 # Version 0.12.1 (2026-10-26)
 
 ## Changed

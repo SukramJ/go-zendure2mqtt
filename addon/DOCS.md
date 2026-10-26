@@ -15,8 +15,9 @@ For a standard Home Assistant install with the Mosquitto broker:
 2. Leave **`mqtt_server` empty** — the add-on auto-connects to the Home
    Assistant MQTT broker (like zigbee2mqtt), and `hass_enable` is on by default,
    so entities appear automatically via MQTT discovery.
-3. **Start** the add-on, then open its **Web UI** (side-panel icon) to see the
-   live diagnostic snapshot.
+3. **Start** the add-on, then open its **Web UI** (side-panel icon) for the
+   dashboard: health, live values, battery packs, the evcc profile and the
+   unit's writable settings.
 
 ## Options reference
 
@@ -36,7 +37,7 @@ For a standard Home Assistant install with the Mosquitto broker:
 | `mqtt_stats_interval` | int | `60` | Seconds between `<name>/maintenance/stats` publishes; `0` switches them off. |
 | `hass_enable` | bool | `true` | Publish Home Assistant MQTT discovery so entities appear automatically. |
 | `language` | list(en\|de) | `en` | Display-name language (topics/entity_ids stay language-independent). |
-| `web_enable` | bool | `true` | Enable the read-only diagnostic web UI (served via Ingress). |
+| `web_enable` | bool | `true` | Enable the web UI (served via Ingress): diagnostics plus the unit's writable settings. |
 | `charge_active_value` | int | `1200` | AC charge power limit (W) written when the "Charge active" switch is turned on. |
 | `discharge_active_value` | int | `1200` | AC discharge power limit (W) written when the "Discharge active" switch is turned on. |
 | `evcc_enable` | bool | `false` | Publish the shared evcc profile (`<name>/status/<sn>/evcc/…`) and accept evcc's battery mode. See [docs/evcc.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/docs/evcc.md). |

@@ -65,7 +65,9 @@ EVCC_ENABLE: false
 # least twice its timeout, e.g. 120.
 EVCC_BATTERYMODE_TIMEOUT: 0
 
-# --- Diagnostic web UI (optional; milestone M2) ---
+# --- Diagnostic web UI (optional) ---
+# Status, live values and a control list that writes to the units; set
+# WEB_USER/WEB_PASSWORD when WEB_BIND is reachable beyond localhost.
 WEB_ENABLE: false
 WEB_BIND: "127.0.0.1:8080"
 WEB_USER: ""

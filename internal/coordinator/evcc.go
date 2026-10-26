@@ -118,35 +118,38 @@ func (c *Coordinator) handleEVCCSet(ctx context.Context, cmd publisher.Command, 
 		return
 	}
 	sn, role, key := cmd.Wildcards[0], cmd.Wildcards[1], cmd.Wildcards[2]
-	reject := func(event string, attrs ...slog.Attr) {
-		attrs = append([]slog.Attr{
-			slog.String("topic", cmd.Topic), slog.String("payload", string(cmd.Payload)),
-		}, attrs...)
-		c.logger.LogAttrs(ctx, slog.LevelWarn, event, attrs...)
+	if err := c.applyEVCCSet(ctx, sn, role, key, v); err != nil {
+		c.rejectSet(ctx, sn, cmd.Topic, string(cmd.Payload), err)
 	}
+}
+
+// applyEVCCSet applies one evcc profile command to the device sn, from MQTT
+// ([Coordinator.handleEVCCSet]) or the web UI ([Coordinator.Write]).
+func (c *Coordinator) applyEVCCSet(ctx context.Context, sn, role, key string, v publisher.SetValue) error {
 	if role != evcc.RoleBattery || key != evcc.KeyBatteryMode {
-		reject("coordinator.evcc_not_writable")
-		return
+		return &setError{event: "coordinator.evcc_not_writable", kind: state.ErrNotWritable}
 	}
 	c.snMu.RLock()
 	dev, ok := c.bySN[sn]
 	c.snMu.RUnlock()
 	if !ok {
-		reject("coordinator.set_unknown_device", slog.String("sn", sn))
-		return
+		return &setError{event: "coordinator.set_unknown_device", kind: state.ErrUnknownDevice, attrs: []slog.Attr{slog.String("sn", sn)}}
 	}
 	if v.Structured() {
-		reject("coordinator.set_rejected", slog.String("evcc", key))
-		return
+		return &setError{event: "coordinator.set_rejected", kind: state.ErrInvalidValue, attrs: []slog.Attr{slog.String("evcc", key)}}
 	}
 	mode, err := evcc.ParseMode(v.Text)
 	if err != nil {
-		reject("coordinator.set_rejected", slog.String("evcc", key), slog.String("err", err.Error()))
-		return
+		return &setError{event: "coordinator.set_rejected", kind: state.ErrInvalidValue, err: err, attrs: []slog.Attr{slog.String("evcc", key), slog.String("err", err.Error())}}
 	}
 	if err := c.applyBatteryMode(ctx, dev, mode); err != nil {
-		reject("coordinator.write_failed", slog.String("sn", sn), slog.String("err", err.Error()))
+		se := &setError{event: "coordinator.write_failed", err: err, attrs: []slog.Attr{slog.String("sn", sn), slog.String("err", err.Error())}}
+		if errors.Is(err, errNoReport) {
+			se.kind = state.ErrNotReady
+		}
+		return se
 	}
+	return nil
 }
 
 // errNoReport refuses a hold/charge for a unit that has not reported yet:

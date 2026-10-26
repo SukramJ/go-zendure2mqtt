@@ -56,7 +56,7 @@ internal/
   hass                  HA Auto-Discovery (sensor/number/select/switch, Sub-Devices)
   discovery             dependency-freier mDNS-Browser (_zendure._tcp)
   state                 thread-safer Snapshot-Cache (nur bei aktivem Web-UI)
-  web                   optionale Diagnose-Web-UI (embedded SPA, /api/health|snapshot)
+  web                   optionale Web-UI (embedded SPA wie mtec/keba, SSE, Steuerung)
   mqtt                  eigener MQTT-Client (protocol-Codec + Lifecycle, TLS-fähig)
   version               Build-Metadaten (LDFLAGS)
 ```
