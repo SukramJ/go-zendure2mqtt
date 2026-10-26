@@ -193,3 +193,31 @@ func TestMaintenanceDefaultsAndOverrides(t *testing.T) {
 		t.Error("a negative MQTT_STATS_INTERVAL was accepted")
 	}
 }
+
+// The evcc keys: off by default, overridable per env like every scalar, and a
+// negative fallback timeout refused.
+func TestEVCCKeys(t *testing.T) {
+	env := fakeEnv{vals: map[string]string{"ZENDURE_MQTT_SERVER": "b"}}
+	cfg, err := config.Load(strings.NewReader("CONNECTION: local\n"), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.EVCCEnable || cfg.EVCCBatteryModeTimeoutDuration() != 0 {
+		t.Errorf("evcc defaults: enable %v, timeout %v; want off", cfg.EVCCEnable, cfg.EVCCBatteryModeTimeoutDuration())
+	}
+
+	env.vals["ZENDURE_EVCC_ENABLE"] = "true"
+	env.vals["ZENDURE_EVCC_BATTERYMODE_TIMEOUT"] = "120"
+	cfg, err = config.Load(strings.NewReader("CONNECTION: local\n"), env)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.EVCCEnable || cfg.EVCCBatteryModeTimeoutDuration().Seconds() != 120 {
+		t.Errorf("evcc env: enable %v, timeout %v", cfg.EVCCEnable, cfg.EVCCBatteryModeTimeoutDuration())
+	}
+
+	delete(env.vals, "ZENDURE_EVCC_BATTERYMODE_TIMEOUT")
+	if _, err := config.Load(strings.NewReader("CONNECTION: local\nEVCC_BATTERYMODE_TIMEOUT: -1\n"), env); err == nil {
+		t.Fatal("a negative EVCC_BATTERYMODE_TIMEOUT was accepted")
+	}
+}

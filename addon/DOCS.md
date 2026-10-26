@@ -39,6 +39,8 @@ For a standard Home Assistant install with the Mosquitto broker:
 | `web_enable` | bool | `true` | Enable the read-only diagnostic web UI (served via Ingress). |
 | `charge_active_value` | int | `1200` | AC charge power limit (W) written when the "Charge active" switch is turned on. |
 | `discharge_active_value` | int | `1200` | AC discharge power limit (W) written when the "Discharge active" switch is turned on. |
+| `evcc_enable` | bool | `false` | Publish the shared evcc profile (`<name>/status/<sn>/evcc/…`) and accept evcc's battery mode. See [docs/evcc.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/docs/evcc.md). |
+| `evcc_batterymode_timeout` | int | `0` | Seconds a `hold`/`charge` battery mode stands without evcc sending it again before the bridge returns to `normal`. `0` = off; with evcc's watchdog use e.g. `120`. |
 | `debug` | bool | `false` | Verbose logging. |
 
 ## Topics

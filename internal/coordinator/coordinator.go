@@ -102,6 +102,10 @@ type Coordinator struct {
 	lastMu sync.Mutex
 	last   map[string]lastReport
 	reach  map[string]bool
+
+	// evcc is the shared evcc profile's battery-mode state, nil while
+	// EVCC_ENABLE is off — see evcc.go.
+	evcc *evccPlane
 }
 
 // lastReport is one device's latest report, kept for [Coordinator.PublishOnline].
@@ -166,6 +170,13 @@ func New(deps Deps) *Coordinator {
 	if err := c.commands.HandleSet(c.topics.CommandFilter(), c.handleSet); err != nil {
 		panic("coordinator: register the set route: " + err.Error())
 	}
+	if deps.Cfg.EVCCEnable {
+		c.evcc = newEVCCPlane()
+		// One level deeper than the set route, so the two never overlap.
+		if err := c.commands.HandleSet(c.topics.EVCCCommandFilter(), c.handleEVCCSet); err != nil {
+			panic("coordinator: register the evcc route: " + err.Error())
+		}
+	}
 	if o, ok := deps.Backend.(source.Observable); ok {
 		o.Observe(c)
 	}
@@ -204,6 +215,12 @@ func (c *Coordinator) Commands() *publisher.CommandRouter { return c.commands }
 // the ADR 0070 phase-5 measurement, latent because 0 of the 7 pack properties
 // is writable, and deliberately left as-is here.
 func CommandFilter(name string) string { return Layout(name).CommandFilter() }
+
+// EVCCCommandFilter is the MQTT filter of the evcc profile's commands,
+// `<name>/set/+/evcc/+/+` — [harender.Layout.EVCCCommandFilter]. Subscribed
+// only with EVCC_ENABLE, named to the state plane's guard always: a filter
+// nobody subscribes only makes that guard stricter.
+func EVCCCommandFilter(name string) string { return Layout(name).EVCCCommandFilter() }
 
 // HARuntimeConfig is the [publisher.Config] this daemon's Home Assistant
 // plane runs on, in ONE place.
@@ -314,7 +331,7 @@ func HAStateConfig(name string, logger *slog.Logger) publisher.StateConfig {
 		QoS:            publisher.QoSAtMostOnce,
 		PulseQoS:       publisher.QoSAtMostOnce,
 		Encoding:       discovery.StatusObjectEncoding,
-		CommandFilters: []string{CommandFilter(name)},
+		CommandFilters: []string{CommandFilter(name), EVCCCommandFilter(name)},
 		Logger:         logger,
 	}
 }
@@ -364,6 +381,9 @@ func (c *Coordinator) Run(ctx context.Context) error {
 	// the bridge's own status topic now, every known device's tree now, and
 	// a device first learned from a cloud report when it reports.
 	go c.migrateBridge(ctx)
+	if c.evcc != nil && c.deps.Cfg.EVCCBatteryModeTimeout > 0 {
+		go c.runEVCCFallback(ctx, c.deps.Cfg.EVCCBatteryModeTimeoutDuration())
+	}
 	for _, dev := range c.deps.Backend.Devices() {
 		c.migrateDevice(ctx, dev.SN)
 	}
@@ -619,6 +639,9 @@ func (c *Coordinator) publish(ctx context.Context, dev source.Device, report *mo
 		if c.publishState(ctx, c.topics.StateTopic(dev.SN, p), p.Value) {
 			written++
 		}
+	}
+	if c.evcc != nil {
+		c.publishEVCC(ctx, dev, report)
 	}
 	// written is reported beside points because the gap between them is the
 	// measurable effect of the dedup gate: this bridge polls every 15s and

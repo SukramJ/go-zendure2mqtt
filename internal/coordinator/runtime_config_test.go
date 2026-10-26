@@ -182,7 +182,7 @@ func TestHAStateConfigStatesBothQoSFields(t *testing.T) {
 	if got.PulseQoS != publisher.QoSAtMostOnce {
 		t.Errorf("PulseQoS = %v, want QoSAtMostOnce stated, not left to coincide with the default", got.PulseQoS)
 	}
-	if want := []string{CommandFilter(testName)}; !slices.Equal(got.CommandFilters, want) {
+	if want := []string{CommandFilter(testName), EVCCCommandFilter(testName)}; !slices.Equal(got.CommandFilters, want) {
 		t.Errorf("CommandFilters = %v, want %v", got.CommandFilters, want)
 	}
 	if got.Encoding != discovery.StatusObjectEncoding {

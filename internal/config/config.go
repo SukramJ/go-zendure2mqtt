@@ -114,6 +114,17 @@ type Config struct {
 	ChargeActiveValue    *int `yaml:"CHARGE_ACTIVE_VALUE"`
 	DischargeActiveValue *int `yaml:"DISCHARGE_ACTIVE_VALUE"`
 
+	// --- evcc (the shared evcc profile, docs/evcc.md) ---
+	// EVCCEnable publishes the `evcc` item group — battery (and PV) meter
+	// values in evcc's units and signs — and routes its batterymode command.
+	// Off by default: off publishes and subscribes nothing extra.
+	EVCCEnable bool `yaml:"EVCC_ENABLE"`
+	// EVCCBatteryModeTimeout is the time in seconds a `hold` or `charge`
+	// batterymode stands without evcc sending it again before the bridge
+	// falls back to `normal`, so an evcc that stopped never leaves the
+	// battery locked. 0 (the default) switches the fallback off.
+	EVCCBatteryModeTimeout int `yaml:"EVCC_BATTERYMODE_TIMEOUT"`
+
 	// --- Diagnostic web UI (optional; milestone M2) ---
 	WebEnable   bool   `yaml:"WEB_ENABLE"`
 	WebBind     string `yaml:"WEB_BIND"`
@@ -172,6 +183,12 @@ func (c *Config) CloudConfigured() bool { return c.CloudAppToken != "" }
 // RefreshDuration returns the local poll interval as a duration.
 func (c *Config) RefreshDuration() time.Duration {
 	return time.Duration(c.Refresh) * time.Second
+}
+
+// EVCCBatteryModeTimeoutDuration returns EVCC_BATTERYMODE_TIMEOUT as a
+// duration; 0 means the fallback is off.
+func (c *Config) EVCCBatteryModeTimeoutDuration() time.Duration {
+	return time.Duration(c.EVCCBatteryModeTimeout) * time.Second
 }
 
 // ChargeActiveW returns the charge power limit (W), or the default when unset.

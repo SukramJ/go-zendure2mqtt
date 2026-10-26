@@ -65,6 +65,11 @@ func Validate(c *Config) error {
 		add("DISCHARGE_ACTIVE_VALUE must be 1..2400 W (omit the key for the %d default), got %d", DefaultDischargeActiveValue, *v)
 	}
 
+	// --- evcc ---
+	if v := c.EVCCBatteryModeTimeout; v < 0 || v > 86400 {
+		add("EVCC_BATTERYMODE_TIMEOUT must be 0 (off) or 1..86400 seconds, got %d", v)
+	}
+
 	// --- MQTT ---
 	if c.MQTTServer == "" {
 		add("MQTT_SERVER is required")

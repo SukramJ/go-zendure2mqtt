@@ -59,6 +59,10 @@ export ZENDURE_HASS_ENABLE="$(bashio::config 'hass_enable')"
 export ZENDURE_CHARGE_ACTIVE_VALUE="$(bashio::config 'charge_active_value')"
 export ZENDURE_DISCHARGE_ACTIVE_VALUE="$(bashio::config 'discharge_active_value')"
 
+# --- evcc (docs/evcc.md) ---
+export ZENDURE_EVCC_ENABLE="$(bashio::config 'evcc_enable')"
+export ZENDURE_EVCC_BATTERYMODE_TIMEOUT="$(bashio::config 'evcc_batterymode_timeout')"
+
 # --- Misc ---
 export ZENDURE_LANGUAGE="$(bashio::config 'language')"
 export ZENDURE_DEBUG="$(bashio::config 'debug')"
