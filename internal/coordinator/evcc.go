@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/evcc"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
+	"github.com/SukramJ/go-zendure2mqtt/internal/state"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
 
@@ -84,6 +86,29 @@ func (c *Coordinator) publishEVCC(ctx context.Context, dev source.Device, report
 		c.publishState(ctx, c.topics.EVCCStatus(dev.SN, v.Role, v.Key), v.Value)
 	}
 	c.publishState(ctx, c.topics.EVCCStatus(dev.SN, evcc.RoleBattery, evcc.KeyBatteryMode), string(mode))
+	c.mirrorEVCC(dev.SN, values, mode)
+}
+
+// mirrorEVCC hands a unit's profile values to the web UI store, labelled in
+// the configured language.
+func (c *Coordinator) mirrorEVCC(sn string, values []evcc.Value, mode evcc.Mode) {
+	if c.deps.State == nil {
+		return
+	}
+	values = append(slices.Clip(values), evcc.Value{
+		Item: evcc.Item{Role: evcc.RoleBattery, Key: evcc.KeyBatteryMode}, Value: string(mode),
+	})
+	entries := make([]state.Entry, 0, len(values))
+	for _, v := range values {
+		entries = append(entries, state.Entry{
+			Group: evcc.Group,
+			Topic: evcc.Group + "/" + v.String(),
+			Name:  v.Name(c.deps.Cfg.Language),
+			Unit:  v.Unit(),
+			Value: v.Value,
+		})
+	}
+	c.deps.State.SetEVCC(sn, entries)
 }
 
 // handleEVCCSet routes one evcc command. Route: `<name>/set/<sn>/evcc/<role>/<key>`,
@@ -178,6 +203,7 @@ func (c *Coordinator) applyBatteryMode(ctx context.Context, dev source.Device, m
 	if mode == evcc.ModeNormal {
 		u.saved = nil
 	}
+	values := evcc.Derive(u.props)
 	p.mu.Unlock()
 
 	if from != mode || write != nil {
@@ -186,6 +212,7 @@ func (c *Coordinator) applyBatteryMode(ctx context.Context, dev source.Device, m
 			slog.Int("written", len(write)))
 	}
 	c.publishState(ctx, c.topics.EVCCStatus(dev.SN, evcc.RoleBattery, evcc.KeyBatteryMode), string(mode))
+	c.mirrorEVCC(dev.SN, values, mode)
 	if write != nil && c.runCtx != nil {
 		c.reReadSoon(dev) //nolint:contextcheck // the re-read outlives this request; it is bounded by the daemon's lifetime
 	}

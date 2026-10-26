@@ -1,6 +1,9 @@
 "use strict";
 
-const GROUP_ORDER = ["now", "config", "static", "battery", "misc"];
+const GROUP_ORDER = ["now", "evcc", "config", "static", "battery", "misc"];
+
+// Group headings that differ from the group key.
+const GROUP_TITLES = { evcc: "evcc profile" };
 
 async function getJSON(path) {
   const res = await fetch(path, { cache: "no-store" });
@@ -36,7 +39,7 @@ function el(tag, attrs, ...kids) {
 function renderHealth(h) {
   document.getElementById("mqtt-dot").className = "dot " + (h.mqtt_connected ? "up" : "down");
   document.getElementById("meta").textContent =
-    `${h.connection} · MQTT ${h.mqtt_server} ${h.mqtt_connected ? "✓" : "✗"} · ${h.devices} device(s) · up ${fmtUptime(h.uptime_seconds)}`;
+    `${h.connection} · MQTT ${h.mqtt_server} ${h.mqtt_connected ? "✓" : "✗"} · ${h.devices} device(s) · evcc profile ${h.evcc_enabled ? "active" : "off"} · up ${fmtUptime(h.uptime_seconds)}`;
   document.getElementById("version").textContent = h.version;
 }
 
@@ -64,7 +67,7 @@ function renderDevice(dev) {
   });
 
   for (const key of keys) {
-    const g = el("div", { class: "group" }, el("h3", {}, key));
+    const g = el("div", { class: "group" }, el("h3", {}, GROUP_TITLES[key] || key));
     const tbl = el("table");
     for (const e of buckets[key].sort((a, b) => (a.name || a.topic).localeCompare(b.name || b.topic))) {
       tbl.append(el("tr", {}, el("td", { class: "k" }, e.name || e.topic), valueCell(e)));

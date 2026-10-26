@@ -109,3 +109,16 @@ func TestSnapshotAndDiff(t *testing.T) {
 		t.Fatalf("snapshot of a partial report: %v", snap)
 	}
 }
+
+// Every status item has a display name in both languages for the web UI.
+func TestItemNames(t *testing.T) {
+	for _, it := range evcc.StatusItems() {
+		en, de := it.Name("en"), it.Name("de")
+		if en == it.String() || de == it.String() || en == de {
+			t.Errorf("%s: names en=%q de=%q", it, en, de)
+		}
+	}
+	if got := (evcc.Item{Role: evcc.RoleBattery, Key: evcc.KeyPower}).Unit(); got != "W" {
+		t.Errorf("battery/power unit = %q, want W", got)
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/SukramJ/go-hamqtt/publisher"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
+	"github.com/SukramJ/go-zendure2mqtt/internal/state"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"
 )
 
@@ -221,4 +222,64 @@ func TestEVCCOff(t *testing.T) {
 
 func equalWrites(got, want []map[string]any) bool {
 	return slices.EqualFunc(got, want, maps.Equal)
+}
+
+// evccEntries returns the web UI's evcc entries of the golden unit by path.
+func evccEntries(t *testing.T, st *state.Store) map[string]state.Entry {
+	t.Helper()
+	out := map[string]state.Entry{}
+	for _, d := range st.Snapshot().Devices {
+		if d.SN != goldenUnit().SN {
+			continue
+		}
+		for _, e := range d.Entries {
+			if e.Group == "evcc" {
+				out[e.Topic] = e
+			}
+		}
+	}
+	return out
+}
+
+// The web UI shows the profile beside the unit's own values, labelled, and
+// follows a battery mode change without waiting for the next report.
+func TestEVCCMirroredToWebUI(t *testing.T) {
+	r := newEVCCRig(t)
+	st := state.New()
+	r.coord.deps.State = st
+	r.report(t, discharging())
+
+	got := evccEntries(t, st)
+	if e := got["evcc/battery/power"]; e.Value != float64(800) || e.Unit != "W" || e.Name != "Battery power" {
+		t.Errorf("battery/power entry = %+v", e)
+	}
+	if e := got["evcc/battery/soc"]; e.Value != float64(64) || e.Unit != "%" {
+		t.Errorf("battery/soc entry = %+v", e)
+	}
+	if e := got["evcc/battery/batterymode"]; e.Value != "normal" {
+		t.Errorf("batterymode entry = %+v", e)
+	}
+	if _, ok := got["evcc/pv/power"]; ok {
+		t.Error("pv/power shown without solarInputPower")
+	}
+
+	r.mode(t, "hold")
+	if e := evccEntries(t, st)["evcc/battery/batterymode"]; e.Value != "hold" {
+		t.Errorf("batterymode after hold = %v, want hold", e.Value)
+	}
+	// The unit's next report replaces its own entries; the profile stays.
+	r.report(t, discharging())
+	if n := len(evccEntries(t, st)); n != 3 {
+		t.Errorf("evcc entries after a report = %d, want 3", n)
+	}
+}
+
+func TestEVCCNotInWebUIWhenDisabled(t *testing.T) {
+	r := newCommandRig(t)
+	st := state.New()
+	r.coord.deps.State = st
+	r.coord.publish(t.Context(), goldenUnit(), &model.Report{SN: goldenUnit().SN, Properties: discharging()})
+	if got := evccEntries(t, st); len(got) != 0 {
+		t.Errorf("evcc entries with EVCC_ENABLE off: %v", got)
+	}
 }

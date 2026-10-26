@@ -7,6 +7,7 @@
 package state
 
 import (
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -46,11 +47,15 @@ type Store struct {
 	mu      sync.RWMutex
 	started time.Time
 	devices map[string]*Device
+	// evcc holds each device's evcc profile entries apart from devices:
+	// [Store.Update] replaces a device wholesale on every report, while the
+	// battery mode also changes between reports.
+	evcc map[string][]Entry
 }
 
 // New returns an empty store stamped with the current start time.
 func New() *Store {
-	return &Store{started: time.Now(), devices: map[string]*Device{}}
+	return &Store{started: time.Now(), devices: map[string]*Device{}, evcc: map[string][]Entry{}}
 }
 
 // StartedAt returns when the store (≈ the daemon) started.
@@ -75,12 +80,27 @@ func (s *Store) Update(dev source.Device, report *model.Report, points []process
 	s.mu.Unlock()
 }
 
-// Snapshot returns a stable-ordered copy of the cache.
+// SetEVCC records the latest evcc profile entries of the device sn,
+// replacing the previous set. Only called with EVCC_ENABLE on, so the UI
+// shows the profile exactly when MQTT carries it.
+func (s *Store) SetEVCC(sn string, entries []Entry) {
+	s.mu.Lock()
+	s.evcc[sn] = entries
+	s.mu.Unlock()
+}
+
+// Snapshot returns a stable-ordered copy of the cache, each device's evcc
+// entries appended to its own.
 func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	devs := make([]*Device, 0, len(s.devices))
-	for _, d := range s.devices {
+	for sn, d := range s.devices {
+		if extra := s.evcc[sn]; len(extra) > 0 {
+			cp := *d
+			cp.Entries = append(slices.Clip(d.Entries), extra...)
+			d = &cp
+		}
 		devs = append(devs, d)
 	}
 	sort.Slice(devs, func(i, j int) bool { return devs[i].SN < devs[j].SN })
