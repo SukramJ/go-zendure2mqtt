@@ -77,6 +77,11 @@ func Validate(c *Config) error {
 	if c.MQTTPort < 1 || c.MQTTPort > 65535 {
 		add("MQTT_PORT must be 1..65535, got %d", c.MQTTPort)
 	}
+	// A CA with verification off would never be consulted; refuse the pair
+	// rather than let the operator believe the CA protects the link.
+	if c.MQTTTLSCA != "" && c.MQTTTLSInsecure {
+		add("MQTT_TLS_CA and MQTT_TLS_INSECURE are mutually exclusive: with verification off the CA is never consulted")
+	}
 	if c.MQTTTopic == "" {
 		add("MQTT_TOPIC is required")
 	} else if _, err := topic.NewSmartHomeMultiLevel(c.MQTTTopic); err != nil {

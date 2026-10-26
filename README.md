@@ -103,11 +103,19 @@ snapshot), `/api/snapshot`, `/api/items` (writable items), `/api/config`,
 
 | Key | Default | Meaning |
 |---|---|---|
+| `MQTT_PORT` | `1883`, `8883` with `MQTT_TLS` | Broker port. An explicit value always wins over the TLS-dependent default. |
+| `MQTT_TLS` | `false` | Connect to the broker over TLS (`tls://`) instead of plain TCP. |
+| `MQTT_TLS_CA` | *(empty)* | Path of a PEM bundle with the CA certificate(s) the broker's certificate must chain to, for a broker signed by a private CA. Replaces the system trust store for this connection. A file that cannot be used stops the daemon at startup with an error naming it. |
+| `MQTT_TLS_INSECURE` | `false` | **Dangerous.** Skip verification of the broker's certificate; the connection is then open to a man-in-the-middle. Explicit opt-in only, the daemon warns at startup. Cannot be combined with `MQTT_TLS_CA`. |
 | `MQTT_TOPIC` | `zendure` | The instance name, the first level of every topic. |
 | `MQTT_MAINTENANCE` | `true` | Enable the [maintenance topics](#maintenance-topics). |
 | `MQTT_STATS_INTERVAL` | `60` | Seconds between `<name>/maintenance/stats` publishes; `0` switches them off. |
 | `EVCC_ENABLE` | `false` | Publish the [evcc profile](docs/evcc.md) (`<name>/status/<sn>/evcc/…`) and accept evcc's battery mode. |
 | `EVCC_BATTERYMODE_TIMEOUT` | `0` | Seconds a `hold`/`charge` stands without evcc sending it again before the bridge returns to `normal`; `0` = off. |
+
+`MQTT_TLS_CA` / `MQTT_TLS_INSECURE` have no effect (and a warning is logged)
+while `MQTT_TLS` is false. The TLS keys apply to the output broker only; the
+Zendure cloud link has its own TLS setup (`CLOUD_TLS_VERIFY`).
 
 > **`MQTT_TOPIC` is the only thing that keeps two instances apart.** Two
 > instances of this bridge on one broker (two sites, two cloud accounts) with

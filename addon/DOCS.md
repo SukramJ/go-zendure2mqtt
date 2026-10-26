@@ -32,6 +32,9 @@ For a standard Home Assistant install with the Mosquitto broker:
 | `mqtt_port` | int | `1883` | MQTT broker port. Only used when `mqtt_server` is set. |
 | `mqtt_login` | str | `""` | MQTT username. Only used when `mqtt_server` is set. |
 | `mqtt_password` | password | `""` | MQTT password. Only used when `mqtt_server` is set. |
+| `mqtt_tls` | bool | `false` | Connect to the broker over TLS. Only used when `mqtt_server` is set — with `mqtt_server` empty the add-on follows the Home Assistant MQTT service, TLS included. Set `mqtt_port` to the broker's TLS port (usually `8883`) as well. |
+| `mqtt_tls_ca` | str | `""` | Path of a PEM CA bundle for a broker signed by a private CA, e.g. `/ssl/ca.crt` or `/share/mqtt/ca.crt` (both folders are mapped read-only). Replaces the system trust store for the broker. A file that cannot be used stops the add-on with an error naming it. |
+| `mqtt_tls_insecure` | bool | `false` | **Dangerous.** Skip verification of the broker certificate — the connection is then open to a man-in-the-middle. Explicit opt-in only, logged as a warning at startup. Cannot be combined with `mqtt_tls_ca`. |
 | `mqtt_topic` | str | *(empty)* | The instance name, the first level of every topic. Empty means `zendure`. **It is the only thing that keeps two instances apart**: two bridges on one broker need different names. Changing it later re-keys every Home Assistant entity. Installs from before 0.10.0 keep their saved `zendure2mqtt`. |
 | `mqtt_maintenance` | bool | `true` | Enable the maintenance topics (`<name>/maintenance/…`: log level, stats). See the security note below. |
 | `mqtt_stats_interval` | int | `60` | Seconds between `<name>/maintenance/stats` publishes; `0` switches them off. |
@@ -43,6 +46,19 @@ For a standard Home Assistant install with the Mosquitto broker:
 | `evcc_enable` | bool | `false` | Publish the shared evcc profile (`<name>/status/<sn>/evcc/…`) and accept evcc's battery mode. See [docs/evcc.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/docs/evcc.md). |
 | `evcc_batterymode_timeout` | int | `0` | Seconds a `hold`/`charge` battery mode stands without evcc sending it again before the bridge returns to `normal`. `0` = off; with evcc's watchdog use e.g. `120`. |
 | `debug` | bool | `false` | Verbose logging. |
+
+## TLS to the MQTT broker
+
+With `mqtt_server` empty the add-on uses the Home Assistant MQTT service and
+connects over TLS exactly when that service reports TLS. For a broker of your
+own set `mqtt_server`, `mqtt_tls: true` and `mqtt_port` (usually `8883`).
+
+If the broker's certificate is signed by a private CA, put the CA bundle (PEM)
+in Home Assistant's `/ssl` folder (e.g. `/ssl/ca.crt`) or under `/share`
+(e.g. `/share/mqtt/ca.crt`) — the add-on maps both read-only — and name it in
+`mqtt_tls_ca`. That bundle then replaces the system trust store for the
+broker. `mqtt_tls_insecure` switches verification off instead; use it only to
+diagnose, never permanently.
 
 ## Topics
 

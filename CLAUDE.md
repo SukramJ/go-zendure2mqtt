@@ -159,7 +159,9 @@ homeassistant/device/<identity-root>_<sn>_pack_<packSn>/config # ... one per bat
 Flat YAML (`config-template.yaml` documents every key); scalar keys overridable via
 `ZENDURE_<KEY>` env (bool/int/float coerced). Loader: file → env → defaults → validate.
 Key fields: `CONNECTION` (local|cloud), `LOCAL_DEVICES` (YAML list of SN+HOST), `REFRESH`,
-`CLOUD_APP_TOKEN`/`CLOUD_TLS_VERIFY`, `MQTT_*`, `HASS_*`, `WEB_*`, `LANGUAGE`,
+`CLOUD_APP_TOKEN`/`CLOUD_TLS_VERIFY`, `MQTT_*` (incl. `MQTT_TLS`/`MQTT_TLS_CA`/`MQTT_TLS_INSECURE`
+for the output broker: port default 8883 when TLS is on and `MQTT_PORT` unset, CA + insecure
+refused, tls.Config built at startup in `outputBrokerConfig`), `HASS_*`, `WEB_*`, `LANGUAGE`,
 `CHARGE_ACTIVE_VALUE`/`DISCHARGE_ACTIVE_VALUE`, `MQTT_MAINTENANCE`/`MQTT_STATS_INTERVAL`.
 `ZENDURE_SUPERVISED` (env only) answers whether a supervisor restarts the daemon (the
 maintenance restart is refused otherwise). Required: `MQTT_SERVER`. Missing local

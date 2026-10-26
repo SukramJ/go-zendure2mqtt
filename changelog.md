@@ -1,3 +1,24 @@
+# Unreleased
+
+## Added
+
+- **TLS to the MQTT broker.** `MQTT_TLS` connects to the output broker over
+  `tls://` instead of `tcp://`; an unset `MQTT_PORT` then defaults to 8883
+  (an explicit port always wins). `MQTT_TLS_CA` names a PEM CA bundle for a
+  broker signed by a private CA, and `MQTT_TLS_INSECURE` (dangerous, warned
+  about at startup) skips certificate verification. The two cannot be
+  combined; a CA file that cannot be used stops the daemon at startup with an
+  error naming it. Env overrides `ZENDURE_MQTT_TLS`, `ZENDURE_MQTT_TLS_CA`,
+  `ZENDURE_MQTT_TLS_INSECURE`. The Zendure cloud link is unchanged.
+- **Add-on.** New options `mqtt_tls`, `mqtt_tls_insecure`, `mqtt_tls_ca`; the
+  add-on maps `/ssl` and `/share` read-only so a CA bundle such as
+  `/ssl/ca.crt` can be used. With `mqtt_server` empty, a Home Assistant MQTT
+  service that reports TLS is now connected over TLS.
+
+## Changed
+
+- go-mqtt v1.7.0.
+
 # Version 0.14.0 (2026-10-26)
 
 The web UI moves into the shared go-bridgeui module. MQTT and Home

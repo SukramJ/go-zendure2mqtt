@@ -12,7 +12,10 @@ const (
 	// DefaultRefresh is the local poll interval in seconds.
 	DefaultRefresh = 15
 
-	DefaultMQTTPort = 1883
+	// DefaultMQTTPort / DefaultMQTTTLSPort are the IANA-registered MQTT
+	// ports; the TLS one is the default while MQTT_TLS is on.
+	DefaultMQTTPort    = 1883
+	DefaultMQTTTLSPort = 8883
 
 	DefaultHASSBaseTopic = "homeassistant"
 
@@ -45,8 +48,13 @@ func applyDefaults(c *Config) {
 	if c.Refresh == 0 {
 		c.Refresh = DefaultRefresh
 	}
+	// Only an unset port is defaulted, so an explicit MQTT_PORT wins over
+	// the TLS-dependent default.
 	if c.MQTTPort == 0 {
 		c.MQTTPort = DefaultMQTTPort
+		if c.MQTTTLS {
+			c.MQTTPort = DefaultMQTTTLSPort
+		}
 	}
 	// The identity root is decided before the name is defaulted, because it
 	// is the one place that has to know whether the key was set at all.
