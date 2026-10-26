@@ -5,7 +5,7 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
-## Unreleased
+## 0.15.0
 
 TLS to the MQTT broker: new options `mqtt_tls`, `mqtt_tls_ca` and
 `mqtt_tls_insecure`. Put a private CA bundle under `/ssl` or `/share` and name
