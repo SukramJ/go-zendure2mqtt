@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -123,20 +124,16 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 	}
 
 	// --- MQTT (output broker) ---
-	mqttClient := mqtt.NewTCPClient(mqtt.TCPConfig{
-		BrokerURL: fmt.Sprintf("tcp://%s:%d", cfg.MQTTServer, cfg.MQTTPort),
-		ClientID:  config.MQTTClientID,
-		Username:  cfg.MQTTLogin,
-		Password:  cfg.MQTTPassword,
-		Will: &mqtt.Will{
-			Topic:   will.Topic,
-			Payload: will.Payload,
-			QoS:     mqtt.QoS(will.QoS),
-			Retain:  will.Retain,
-		},
-		CleanStart: true,
-		Logger:     logger,
-	})
+	mqttCfg, err := outputBrokerConfig(cfg, &mqtt.Will{
+		Topic:   will.Topic,
+		Payload: will.Payload,
+		QoS:     mqtt.QoS(will.QoS),
+		Retain:  will.Retain,
+	}, logger)
+	if err != nil {
+		return err
+	}
+	mqttClient := mqtt.NewTCPClient(mqttCfg)
 	lifecycle := mqtt.NewLifecycle(mqtt.LifecycleConfig{Logger: logger}, mqttClient)
 	// Circuit breaker between the bridge and the output broker: during a
 	// degraded-broker phase (TCP link up, acks missing) publishes fail
@@ -303,6 +300,34 @@ func buildBackend(cfg *config.Config, logger *slog.Logger) source.Backend {
 
 // loadConfig resolves the config path (explicit flag or standard search)
 // and loads it with environment overrides applied.
+// outputBrokerConfig builds the client config of the output broker link.
+//
+// The TLS config is built here, at startup, so a CA file that cannot be used
+// stops the daemon with an error naming it instead of turning into a
+// handshake failure on every reconnect. The server name is the broker
+// hostname from MQTT_SERVER, never a URL. With MQTT_TLS off no TLS config is
+// built at all (the client would ignore one on tcp:// anyway).
+func outputBrokerConfig(cfg *config.Config, will *mqtt.Will, logger *slog.Logger) (mqtt.TCPConfig, error) {
+	var tlsConfig *tls.Config
+	if cfg.MQTTTLS {
+		var err error
+		tlsConfig, err = mqtt.NewClientTLSConfigWithCA(cfg.MQTTServer, cfg.MQTTTLSCA, cfg.MQTTTLSInsecure)
+		if err != nil {
+			return mqtt.TCPConfig{}, fmt.Errorf("mqtt: broker TLS: %w", err)
+		}
+	}
+	return mqtt.TCPConfig{
+		BrokerURL:  cfg.MQTTBrokerURL(),
+		ClientID:   config.MQTTClientID,
+		Username:   cfg.MQTTLogin,
+		Password:   cfg.MQTTPassword,
+		TLSConfig:  tlsConfig,
+		Will:       will,
+		CleanStart: true,
+		Logger:     logger,
+	}, nil
+}
+
 func loadConfig(configPath string, logger *slog.Logger) (*config.Config, error) {
 	env := config.OSEnv{}
 	path := configPath
@@ -317,6 +342,7 @@ func loadConfig(configPath string, logger *slog.Logger) (*config.Config, error) 
 			return nil, err
 		}
 		logger.Info("zendure2mqtt.config_loaded", slog.String("path", "(environment only)"))
+		logConfigWarnings(cfg, logger)
 		return cfg, nil
 	}
 	cfg, err := config.LoadFile(path, env)
@@ -324,7 +350,16 @@ func loadConfig(configPath string, logger *slog.Logger) (*config.Config, error) 
 		return nil, err
 	}
 	logger.Info("zendure2mqtt.config_loaded", slog.String("path", path))
+	logConfigWarnings(cfg, logger)
 	return cfg, nil
+}
+
+// logConfigWarnings logs every non-fatal config problem [config.Config.Warnings]
+// reports.
+func logConfigWarnings(cfg *config.Config, logger *slog.Logger) {
+	for _, w := range cfg.Warnings() {
+		logger.Warn("zendure2mqtt.config_warning", slog.String("warning", w))
+	}
 }
 
 // errTransportNotWired is returned by a [deferredTransport] used before its

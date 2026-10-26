@@ -27,17 +27,36 @@ if bashio::config.has_value 'mqtt_server'; then
   export ZENDURE_MQTT_PORT="$(bashio::config 'mqtt_port')"
   export ZENDURE_MQTT_LOGIN="$(bashio::config 'mqtt_login')"
   export ZENDURE_MQTT_PASSWORD="$(bashio::config 'mqtt_password')"
+  export ZENDURE_MQTT_TLS="$(bashio::config 'mqtt_tls')"
+  if bashio::config.true 'mqtt_tls' && [ "${ZENDURE_MQTT_PORT}" = "1883" ]; then
+    bashio::log.warning "mqtt_tls is on but mqtt_port is 1883, the plaintext MQTT port; TLS brokers usually listen on 8883."
+  fi
 elif bashio::services.available 'mqtt'; then
   bashio::log.info "mqtt_server empty; using the Home Assistant MQTT service."
   export ZENDURE_MQTT_SERVER="$(bashio::services 'mqtt' 'host')"
   export ZENDURE_MQTT_PORT="$(bashio::services 'mqtt' 'port')"
   export ZENDURE_MQTT_LOGIN="$(bashio::services 'mqtt' 'username')"
   export ZENDURE_MQTT_PASSWORD="$(bashio::services 'mqtt' 'password')"
+  # The service states whether its port speaks TLS; follow it, so the port
+  # it hands over is never dialed with the wrong protocol.
+  if [ "$(bashio::services 'mqtt' 'ssl')" = "true" ]; then
+    export ZENDURE_MQTT_TLS="true"
+  else
+    export ZENDURE_MQTT_TLS="false"
+  fi
 else
   bashio::log.warning "mqtt_server empty and no MQTT service offered; falling back to core-mosquitto:1883."
   export ZENDURE_MQTT_SERVER="core-mosquitto"
   export ZENDURE_MQTT_PORT="1883"
+  export ZENDURE_MQTT_TLS="false"
 fi
+# CA bundle and the verification opt-out apply to whichever broker was chosen
+# above. The daemon refuses the two together, warns when either is set while
+# TLS is off, and stops when the CA file cannot be used.
+if bashio::config.has_value 'mqtt_tls_ca'; then
+  export ZENDURE_MQTT_TLS_CA="$(bashio::config 'mqtt_tls_ca')"
+fi
+export ZENDURE_MQTT_TLS_INSECURE="$(bashio::config 'mqtt_tls_insecure')"
 # An empty mqtt_topic leaves MQTT_TOPIC unset: the daemon then publishes under
 # its default name (zendure) and keeps the Home Assistant identities on the
 # pre-0.10.0 root (zendure2mqtt). A stored value — every install before 0.10.0
@@ -97,7 +116,7 @@ else
   echo "LOCAL_DEVICES: []" > "${CONFIG}"
 fi
 
-bashio::log.info "Configuration prepared; connection=${ZENDURE_CONNECTION}, MQTT ${ZENDURE_MQTT_SERVER}:${ZENDURE_MQTT_PORT}."
+bashio::log.info "Configuration prepared; connection=${ZENDURE_CONNECTION}, MQTT ${ZENDURE_MQTT_SERVER}:${ZENDURE_MQTT_PORT} (tls=${ZENDURE_MQTT_TLS})."
 bashio::log.info "Web UI bound to ${ZENDURE_WEB_BIND} (served via Ingress)."
 
 # Hand off to the daemon (becomes PID 1). The catalog (zendure.yaml) is

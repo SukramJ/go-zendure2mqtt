@@ -5,6 +5,15 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## Unreleased
+
+TLS to the MQTT broker: new options `mqtt_tls`, `mqtt_tls_ca` and
+`mqtt_tls_insecure`. Put a private CA bundle under `/ssl` or `/share` and name
+it in `mqtt_tls_ca` (e.g. `/ssl/ca.crt`); set `mqtt_port` to the broker's TLS
+port (usually 8883). With `mqtt_server` empty, a Home Assistant MQTT service
+that reports TLS is now connected over TLS. Nothing changes for existing
+plaintext setups.
+
 ## 0.14.0
 
 The web panel is now the shared go-bridgeui dashboard, the same as in the

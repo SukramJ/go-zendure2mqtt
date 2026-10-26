@@ -30,7 +30,18 @@ CLOUD_TLS_VERIFY: false
 
 # --- MQTT (the broker the bridge publishes to) ---
 MQTT_SERVER: localhost
+# Omit MQTT_PORT for the default: 1883, or 8883 with MQTT_TLS. An explicit
+# value always wins.
 MQTT_PORT: 1883
+# TLS to the broker (tls:// instead of tcp://). Off by default.
+MQTT_TLS: false
+# PEM bundle with the CA certificate(s) of a broker signed by a private CA. It
+# replaces the system trust store for this connection; empty = system roots.
+# A file that cannot be used stops the daemon at startup.
+MQTT_TLS_CA: ""
+# DANGEROUS: skip verification of the broker certificate (man-in-the-middle
+# possible). Explicit opt-in only; cannot be combined with MQTT_TLS_CA.
+MQTT_TLS_INSECURE: false
 MQTT_LOGIN: ""
 MQTT_PASSWORD: ""
 # Instance name: the first level of every topic (<name>/status/…, <name>/set/…,

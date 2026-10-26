@@ -13,7 +13,11 @@
 // an in-YAML prefix would create.
 package config
 
-import "time"
+import (
+	"net"
+	"strconv"
+	"time"
+)
 
 // Daemon-wide constants.
 const (
@@ -86,6 +90,20 @@ type Config struct {
 	MQTTPort     int    `yaml:"MQTT_PORT"`
 	MQTTLogin    string `yaml:"MQTT_LOGIN"`
 	MQTTPassword string `yaml:"MQTT_PASSWORD"`
+	// MQTTTLS dials the broker over tls:// instead of tcp://. With TLS on,
+	// an unset MQTT_PORT defaults to 8883 instead of 1883; an explicit
+	// MQTT_PORT always wins.
+	MQTTTLS bool `yaml:"MQTT_TLS"`
+	// MQTTTLSInsecure skips verification of the broker's certificate. It
+	// leaves the link open to an active man-in-the-middle, so it is an
+	// explicit operator opt-in only, never a default, and the daemon warns
+	// at startup while it is on.
+	MQTTTLSInsecure bool `yaml:"MQTT_TLS_INSECURE"`
+	// MQTTTLSCA is the path of a PEM bundle of the CA certificate(s) the
+	// broker's certificate must chain to — for a broker signed by a private
+	// CA. It replaces the system trust store for this connection. Empty uses
+	// the system roots.
+	MQTTTLSCA string `yaml:"MQTT_TLS_CA"`
 	// MQTTTopic is the instance name, `<name>` in `<name>/status/…`. It is
 	// the only thing that keeps two instances on one broker apart.
 	MQTTTopic string `yaml:"MQTT_TOPIC"`
@@ -157,6 +175,36 @@ func (c *Config) IdentityRoot() string {
 		return c.identityRoot
 	}
 	return c.MQTTTopic
+}
+
+// MQTTBrokerURL is the URL the output-broker client dials: tls:// when
+// MQTT_TLS is on, tcp:// otherwise.
+func (c *Config) MQTTBrokerURL() string {
+	scheme := "tcp"
+	if c.MQTTTLS {
+		scheme = "tls"
+	}
+	return scheme + "://" + net.JoinHostPort(c.MQTTServer, strconv.Itoa(c.MQTTPort))
+}
+
+// Warnings returns the config problems that are worth an operator's
+// attention but do not stop the daemon: TLS options that have no effect
+// because MQTT_TLS is off, and certificate verification switched off.
+func (c *Config) Warnings() []string {
+	var out []string
+	if !c.MQTTTLS {
+		if c.MQTTTLSInsecure {
+			out = append(out, "MQTT_TLS_INSECURE has no effect while MQTT_TLS is false")
+		}
+		if c.MQTTTLSCA != "" {
+			out = append(out, "MQTT_TLS_CA has no effect while MQTT_TLS is false")
+		}
+		return out
+	}
+	if c.MQTTTLSInsecure {
+		out = append(out, "MQTT_TLS_INSECURE is on: the broker certificate is NOT verified, the connection is open to a man-in-the-middle")
+	}
+	return out
 }
 
 // MaintenanceEnabled reports whether the maintenance topics are on (the
