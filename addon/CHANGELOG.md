@@ -5,6 +5,11 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.12.1
+
+The web panel now shows the **evcc** profile values (battery power, state of
+charge, battery mode, PV power) per unit when `evcc_enable` is on.
+
 ## 0.12.0
 
 New: the shared **evcc** profile, off by default (`evcc_enable`). evcc can

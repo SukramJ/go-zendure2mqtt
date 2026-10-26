@@ -1,3 +1,14 @@
+# Version 0.12.1 (2026-10-26)
+
+## Changed
+
+- **Web UI shows the evcc profile.** With `EVCC_ENABLE` on, every unit's
+  card gets an "evcc profile" block right after the live values: battery
+  power, state of charge, battery mode and (on units with solar inputs) PV
+  power, labelled in the configured language with their units. The battery
+  mode updates as soon as evcc changes it. The header shows whether the
+  profile is active (`/api/health` gains `evcc_enabled`). MQTT is unchanged.
+
 # Version 0.12.0 (2026-10-26)
 
 The shared evcc profile (#66). Off by default; updating needs no other

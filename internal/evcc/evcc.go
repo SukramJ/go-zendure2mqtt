@@ -50,6 +50,34 @@ type Item struct {
 	Role, Key string
 }
 
+// labels are the items' display names (English, German) and units, for the
+// diagnostic web UI.
+var labels = map[Item][3]string{
+	{RoleBattery, KeyPower}:       {"Battery power", "Batterieleistung", "W"},
+	{RoleBattery, KeySoC}:         {"Battery state of charge", "Batterie-Ladestand", "%"},
+	{RoleBattery, KeyBatteryMode}: {"Battery mode", "Batteriemodus", ""},
+	{RolePV, KeyPower}:            {"PV power", "PV-Leistung", "W"},
+}
+
+// String is the item's path below [Group], `<role>/<key>`.
+func (i Item) String() string { return i.Role + "/" + i.Key }
+
+// Name is the item's display name in lang ("de" or anything else →
+// English); the path for an item without one.
+func (i Item) Name(lang string) string {
+	l, ok := labels[i]
+	switch {
+	case !ok:
+		return i.String()
+	case lang == "de":
+		return l[1]
+	}
+	return l[0]
+}
+
+// Unit is the item's unit, "" for none.
+func (i Item) Unit() string { return labels[i][2] }
+
 // StatusItems lists every item the profile can publish, for the self-echo
 // guard and the documentation contract test.
 func StatusItems() []Item {

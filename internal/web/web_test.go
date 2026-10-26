@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
+	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 	"github.com/SukramJ/go-zendure2mqtt/internal/state"
 	"github.com/SukramJ/go-zendure2mqtt/internal/web"
 )
@@ -80,5 +81,38 @@ func TestBasicAuth(t *testing.T) {
 	req.SetBasicAuth("admin", "wrong")
 	if rr := do(s, req); rr.Code != http.StatusUnauthorized {
 		t.Errorf("wrong creds: status = %d, want 401", rr.Code)
+	}
+}
+
+func TestHealthReportsEVCC(t *testing.T) {
+	s := web.New(web.Deps{Cfg: &config.Config{EVCCEnable: true}, Store: state.New()})
+	rr := do(s, httptest.NewRequest(http.MethodGet, "/api/health", http.NoBody))
+	var h map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &h); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if h["evcc_enabled"] != true {
+		t.Errorf("evcc_enabled = %v, want true", h["evcc_enabled"])
+	}
+}
+
+// The evcc entries ride in the device's entries; a device without a report
+// does not appear for them alone.
+func TestSnapshotCarriesEVCC(t *testing.T) {
+	st := state.New()
+	st.Update(source.Device{SN: "SN1"}, nil, nil, "en")
+	st.SetEVCC("SN1", []state.Entry{{Group: "evcc", Topic: "evcc/battery/soc", Name: "Battery state of charge", Unit: "%", Value: 64.0}})
+	st.SetEVCC("SN2", []state.Entry{{Group: "evcc", Topic: "evcc/battery/soc", Value: 1.0}})
+	s := web.New(web.Deps{Cfg: &config.Config{EVCCEnable: true}, Store: st})
+	rr := do(s, httptest.NewRequest(http.MethodGet, "/api/snapshot", http.NoBody))
+	var snap state.Snapshot
+	if err := json.Unmarshal(rr.Body.Bytes(), &snap); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(snap.Devices) != 1 || len(snap.Devices[0].Entries) != 1 {
+		t.Fatalf("snapshot = %+v, want SN1 with one evcc entry", snap.Devices)
+	}
+	if e := snap.Devices[0].Entries[0]; e.Group != "evcc" || e.Unit != "%" || e.Value != 64.0 {
+		t.Errorf("entry = %+v", e)
 	}
 }

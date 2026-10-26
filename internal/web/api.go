@@ -22,6 +22,7 @@ type health struct {
 	StartedAt     time.Time `json:"started_at"`
 	UptimeSeconds int64     `json:"uptime_seconds"`
 	Devices       int       `json:"devices"`
+	EVCCEnabled   bool      `json:"evcc_enabled"`
 }
 
 // handleHealth reports build, connectivity and uptime.
@@ -40,6 +41,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		StartedAt:     snap.StartedAt,
 		UptimeSeconds: int64(time.Since(snap.StartedAt).Seconds()),
 		Devices:       len(snap.Devices),
+		EVCCEnabled:   s.cfg.EVCCEnable,
 	})
 }
 
