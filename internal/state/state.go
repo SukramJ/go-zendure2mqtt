@@ -33,7 +33,10 @@ type Device struct {
 	Model     string    `json:"model,omitempty"`
 	Product   string    `json:"product,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Entries   []Entry   `json:"entries"`
+	// Online is the device's reachability as the backend last reported it,
+	// nil until it has.
+	Online  *bool   `json:"online,omitempty"`
+	Entries []Entry `json:"entries"`
 }
 
 // Snapshot is a point-in-time copy of the whole cache.
@@ -41,6 +44,10 @@ type Snapshot struct {
 	StartedAt time.Time `json:"started_at"`
 	Devices   []*Device `json:"devices"`
 }
+
+// maxProblems bounds the problem log: the UI shows the recent ones, and a
+// device rejecting every poll must not grow it without limit.
+const maxProblems = 20
 
 // Store holds the latest Device snapshot per serial.
 type Store struct {
@@ -51,11 +58,28 @@ type Store struct {
 	// [Store.Update] replaces a device wholesale on every report, while the
 	// battery mode also changes between reports.
 	evcc map[string][]Entry
+	// online is each device's reachability, kept apart for the same reason:
+	// it changes between reports, and a device may be unreachable before
+	// its first one.
+	online map[string]bool
+	// upstream is whether the backend reaches what it bridges, nil until it
+	// has said so.
+	upstream *bool
+	problems []Problem
+
+	subMu sync.Mutex
+	subs  map[chan struct{}]struct{}
 }
 
 // New returns an empty store stamped with the current start time.
 func New() *Store {
-	return &Store{started: time.Now(), devices: map[string]*Device{}, evcc: map[string][]Entry{}}
+	return &Store{
+		started: time.Now(),
+		devices: map[string]*Device{},
+		evcc:    map[string][]Entry{},
+		online:  map[string]bool{},
+		subs:    map[chan struct{}]struct{}{},
+	}
 }
 
 // StartedAt returns when the store (≈ the daemon) started.
@@ -78,6 +102,7 @@ func (s *Store) Update(dev source.Device, report *model.Report, points []process
 	s.mu.Lock()
 	s.devices[dev.SN] = d
 	s.mu.Unlock()
+	s.notify()
 }
 
 // SetEVCC records the latest evcc profile entries of the device sn,
@@ -87,22 +112,119 @@ func (s *Store) SetEVCC(sn string, entries []Entry) {
 	s.mu.Lock()
 	s.evcc[sn] = entries
 	s.mu.Unlock()
+	s.notify()
+}
+
+// SetOnline records whether the device sn answers.
+func (s *Store) SetOnline(sn string, online bool) {
+	s.mu.Lock()
+	prev, known := s.online[sn]
+	s.online[sn] = online
+	s.mu.Unlock()
+	if !known || prev != online {
+		s.notify()
+	}
+}
+
+// SetUpstream records whether the backend reaches what it bridges.
+func (s *Store) SetUpstream(usable bool) {
+	s.mu.Lock()
+	changed := s.upstream == nil || *s.upstream != usable
+	s.upstream = &usable
+	s.mu.Unlock()
+	if changed {
+		s.notify()
+	}
+}
+
+// Upstream reports the backend's last reachability and whether it has
+// reported one at all.
+func (s *Store) Upstream() (usable, known bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.upstream == nil {
+		return false, false
+	}
+	return *s.upstream, true
+}
+
+// AddProblem appends p to the problem log, dropping the oldest beyond
+// [maxProblems].
+func (s *Store) AddProblem(p Problem) {
+	if p.At.IsZero() {
+		p.At = time.Now()
+	}
+	s.mu.Lock()
+	s.problems = append(s.problems, p)
+	if n := len(s.problems) - maxProblems; n > 0 {
+		s.problems = slices.Delete(s.problems, 0, n)
+	}
+	s.mu.Unlock()
+	s.notify()
+}
+
+// Problems returns the problem log, newest first.
+func (s *Store) Problems() []Problem {
+	s.mu.RLock()
+	out := make([]Problem, len(s.problems))
+	copy(out, s.problems)
+	s.mu.RUnlock()
+	slices.Reverse(out)
+	return out
 }
 
 // Snapshot returns a stable-ordered copy of the cache, each device's evcc
-// entries appended to its own.
+// entries appended to its own. A device known to the backend's reachability
+// reports but without a report of its own is listed without entries.
 func (s *Store) Snapshot() Snapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	devs := make([]*Device, 0, len(s.devices))
 	for sn, d := range s.devices {
+		cp := *d
 		if extra := s.evcc[sn]; len(extra) > 0 {
-			cp := *d
 			cp.Entries = append(slices.Clip(d.Entries), extra...)
-			d = &cp
 		}
-		devs = append(devs, d)
+		if on, ok := s.online[sn]; ok {
+			cp.Online = &on
+		}
+		devs = append(devs, &cp)
+	}
+	for sn, on := range s.online {
+		if _, ok := s.devices[sn]; !ok {
+			devs = append(devs, &Device{SN: sn, Online: &on, Entries: []Entry{}})
+		}
 	}
 	sort.Slice(devs, func(i, j int) bool { return devs[i].SN < devs[j].SN })
 	return Snapshot{StartedAt: s.started, Devices: devs}
+}
+
+// Changes returns a channel that receives a value whenever the cache
+// changes, plus a func that releases it. Notifications coalesce: a slow
+// reader sees one pending signal, never a backlog.
+func (s *Store) Changes() (events <-chan struct{}, cancel func()) {
+	ch := make(chan struct{}, 1)
+	s.subMu.Lock()
+	s.subs[ch] = struct{}{}
+	s.subMu.Unlock()
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			s.subMu.Lock()
+			delete(s.subs, ch)
+			s.subMu.Unlock()
+		})
+	}
+}
+
+// notify signals every subscriber without blocking.
+func (s *Store) notify() {
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+	for ch := range s.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }

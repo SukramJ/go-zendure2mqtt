@@ -36,8 +36,12 @@ setup (pure Go, custom MQTT client, declarative catalog, distroless image).
   battery and PV meter values in evcc's units and signs plus evcc's battery
   modes (`normal` / `hold` / `charge`), behind `EVCC_ENABLE`. See
   [docs/evcc.md](docs/evcc.md).
-- **Diagnostic web UI** — optional read-only embedded SPA over `/api/health` +
-  `/api/snapshot` (Home Assistant Ingress-friendly).
+- **Diagnostic web UI** — optional embedded dashboard (Home Assistant
+  Ingress-friendly), laid out like go-mtec2mqtt and go-keba2mqtt: health and
+  per-unit reachability, recent problems, live values, battery packs, the evcc
+  profile, the configuration, and a control list that writes through the same
+  path as an MQTT `set` (operating-mode and flash-relevant settings ask
+  first). Live updates over Server-Sent Events.
 - **mDNS discovery** + a diagnostic CLI (`zendure2mqtt-util`).
 - **Home Assistant add-on** — installable from this repo (see [addon/](addon/)).
 - **Pure Go** — only `gopkg.in/yaml.v3` and `golang.org/x/sync`; `CGO_ENABLED=0`,
@@ -86,8 +90,14 @@ zendure2mqtt-util catalog-check --catalog zendure.yaml       # validate the cata
 
 All scalar keys in [`config-template.yaml`](config-template.yaml) can be
 overridden via `ZENDURE_*` environment variables (e.g. `ZENDURE_MQTT_PASSWORD`).
-Booleans accept `true`/`false`. With the web UI enabled (`WEB_ENABLE`), a
-read-only dashboard is served on `WEB_BIND` (default `127.0.0.1:8080`).
+Booleans accept `true`/`false`. With the web UI enabled (`WEB_ENABLE`), the
+dashboard is served on `WEB_BIND` (default `127.0.0.1:8080`). It can write to
+the units, so set `WEB_USER`/`WEB_PASSWORD` when it is reachable beyond
+localhost (the add-on serves it through Ingress, which authenticates).
+
+The UI's API: `GET /api/health`, `/api/status` (health + snapshot),
+`/api/snapshot`, `/api/items` (writable items), `/api/config`, the SSE stream
+`/api/events`, and `POST /api/write` with `{"sn","key","value"}`.
 
 | Key | Default | Meaning |
 |---|---|---|

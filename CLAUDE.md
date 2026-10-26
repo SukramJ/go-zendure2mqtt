@@ -115,10 +115,16 @@ derived from the report (`acMode==1 && inputLimit>0`, etc.). Limits via
 discovery path as synthetic points; only the `/set` write is special-cased in the coordinator.
 
 ### Web UI + state (`internal/web`, `internal/state`)
-Optional read-only diagnostic UI (`WEB_ENABLE`): an embedded vanilla SPA (`//go:embed`, no
-build step) over `GET /api/health` + `GET /api/snapshot`, optional HTTP basic auth, served
-on `WEB_BIND`. The coordinator feeds a thread-safe `state.Store` (allocated only when the UI
-is on). HA-Ingress-friendly (relative asset URLs).
+Optional dashboard (`WEB_ENABLE`), the same layout, API shape and hardening as
+go-mtec2mqtt / go-keba2mqtt: an embedded vanilla SPA (`internal/web/static`, `//go:embed`, no
+build step, i18n bundles in `static/i18n/`) over a `web.Backend` the coordinator satisfies
+structurally (`coordinator/web.go`): `GET /api/health|status|snapshot|items|config`, SSE
+`/api/events`, `POST /api/write` `{sn,key,value}`. Writes go through `applySet` /
+`applyEVCCSet` — the same path as an MQTT `set`, refusals logged under the same events and
+recorded in the store's problem log; catalog entries with `confirm: true` (and the virtual
+switches) ask in the UI first. The coordinator feeds a thread-safe `state.Store` (allocated
+only when the UI is on) with reports, reachability and problems. Assets carry a content-hash
+ETag. HA-Ingress-friendly (relative asset URLs).
 
 ### mDNS discovery (`internal/discovery`)
 A tiny dependency-free mDNS browser (PTR/SRV/A/TXT parse with name compression) for

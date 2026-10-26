@@ -41,6 +41,10 @@ type Entry struct {
 	Offset float64 `yaml:"offset"`
 	// Writable marks the property as settable (HA gets a command topic).
 	Writable bool `yaml:"writable"`
+	// Confirm asks the web UI to confirm a write first: the property changes
+	// how the unit operates or what it persists to flash. MQTT and Home
+	// Assistant are unaffected.
+	Confirm bool `yaml:"confirm"`
 	// Min / Max / Step bound a writable number entity.
 	Min  *float64 `yaml:"min"`
 	Max  *float64 `yaml:"max"`

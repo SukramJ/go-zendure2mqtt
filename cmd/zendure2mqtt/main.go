@@ -210,6 +210,8 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 		Logger:     logger,
 		HARuntime:  haRuntime,
 		StatePlane: statePlane,
+
+		MQTTConnected: mqttClient.IsConnected,
 	})
 
 	// --- mqtt-smarthome instance: <name>/info and <name>/maintenance/… ---
@@ -258,12 +260,12 @@ func run(configPath, catalogPath string, logger *slog.Logger, level *slog.LevelV
 	go func() { _ = instance.RunStats(gctx) }() // ErrStatsOff when disabled; never fatal
 
 	if cfg.WebEnable {
-		srv := web.New(web.Deps{
-			Cfg:           cfg,
-			Store:         store,
-			MQTTConnected: mqttClient.IsConnected,
-			Logger:        logger,
-		})
+		srv := web.New(web.Config{
+			Bind:     cfg.WebBind,
+			User:     cfg.WebUser,
+			Password: cfg.WebPassword,
+			Logger:   logger,
+		}, coord)
 		g.Go(func() error { return srv.Run(gctx) })
 	}
 

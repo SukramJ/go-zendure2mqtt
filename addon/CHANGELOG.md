@@ -5,6 +5,14 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.13.0
+
+New web panel, the same as in the M-TEC and KEBA add-ons: status and
+reachability of every unit, recent problems, live values, battery packs, the
+evcc profile, and the unit's settings — which can now be changed from the
+panel (operating mode and flash-relevant settings ask first). Updates live.
+Nothing changes for MQTT or Home Assistant entities.
+
 ## 0.12.1
 
 The web panel now shows the **evcc** profile values (battery power, state of
