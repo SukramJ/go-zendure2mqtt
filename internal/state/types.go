@@ -4,8 +4,9 @@
 package state
 
 import (
-	"errors"
 	"time"
+
+	"github.com/SukramJ/go-bridgeui"
 )
 
 // The DTOs below are what the web UI's API serves. They live here, beside the
@@ -101,15 +102,16 @@ type Option struct {
 	Label string `json:"label"`
 }
 
-// The errors a write from the UI can fail with, so the web layer maps them
-// to HTTP status codes without knowing the coordinator.
+// The errors a write from the UI can fail with are go-bridgeui's, so the
+// web layer hands them through and the server maps them to HTTP status
+// codes without knowing the coordinator.
 var (
 	// ErrUnknownDevice: no device with that serial.
-	ErrUnknownDevice = errors.New("unknown device")
+	ErrUnknownDevice = bridgeui.ErrUnknownDevice
 	// ErrNotWritable: the key names nothing writable.
-	ErrNotWritable = errors.New("not writable")
+	ErrNotWritable = bridgeui.ErrNotWritable
 	// ErrInvalidValue: the value does not fit the item.
-	ErrInvalidValue = errors.New("invalid value")
+	ErrInvalidValue = bridgeui.ErrInvalidValue
 	// ErrNotReady: the daemon or the device cannot take the write yet.
-	ErrNotReady = errors.New("not ready")
+	ErrNotReady = bridgeui.ErrNotReady
 )
