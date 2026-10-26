@@ -5,6 +5,16 @@ tracks the project release; see the project
 [changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
 for the full daemon details.
 
+## 0.12.0
+
+New: the shared **evcc** profile, off by default (`evcc_enable`). evcc can
+read each SolarFlow as a battery (and PV) meter and switch it between
+`normal`, `hold` (no discharge) and `charge` (charge from AC); `normal`
+restores your previous settings. `evcc_batterymode_timeout` returns the
+battery to `normal` when evcc stops. Setup and the `evcc.yaml` snippet:
+[docs/evcc.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/docs/evcc.md).
+Existing entities, options and behaviour are unchanged.
+
 ## 0.11.0
 
 Dependency update (go-hamqtt 0.37.0); no change to entities, options or

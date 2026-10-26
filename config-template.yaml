@@ -55,6 +55,16 @@ HASS_BASE_TOPIC: homeassistant
 CHARGE_ACTIVE_VALUE: 1200
 DISCHARGE_ACTIVE_VALUE: 1200
 
+# --- evcc (the shared evcc profile, see docs/evcc.md) ---
+# Publishes <name>/status/<sn>/evcc/battery/{power,soc,batterymode} (and
+# evcc/pv/power on units with solar inputs) in evcc's units and signs, and
+# routes <name>/set/<sn>/evcc/battery/batterymode (1 normal, 2 hold, 3 charge).
+EVCC_ENABLE: false
+# Seconds a hold/charge stands without evcc sending it again before the bridge
+# falls back to normal. 0 = off. With evcc's watchdog (docs/evcc.md) use at
+# least twice its timeout, e.g. 120.
+EVCC_BATTERYMODE_TIMEOUT: 0
+
 # --- Diagnostic web UI (optional; milestone M2) ---
 WEB_ENABLE: false
 WEB_BIND: "127.0.0.1:8080"

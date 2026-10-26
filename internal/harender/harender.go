@@ -58,6 +58,7 @@ import (
 	"github.com/SukramJ/go-hamqtt/topic"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
+	"github.com/SukramJ/go-zendure2mqtt/internal/evcc"
 	"github.com/SukramJ/go-zendure2mqtt/internal/hass"
 	"github.com/SukramJ/go-zendure2mqtt/internal/process"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
@@ -171,6 +172,25 @@ func (l Layout) Online(sn string) string {
 // measurement, latent because none of the pack properties is writable.
 func (l Layout) CommandFilter() string {
 	return l.Name() + "/" + topic.FunctionSet + "/+/+/+"
+}
+
+// EVCCStatus is the status item of one evcc profile item of unit sn,
+// `<name>/status/<sn>/evcc/<role>/<key>` (docs/evcc.md).
+func (l Layout) EVCCStatus(sn, role, key string) string {
+	return l.Status(sn, evcc.Group, role, key)
+}
+
+// EVCCSet is the set item of one evcc profile command,
+// `<name>/set/<sn>/evcc/<role>/<key>`.
+func (l Layout) EVCCSet(sn, role, key string) string {
+	return l.Set(sn, evcc.Group, role, key)
+}
+
+// EVCCCommandFilter is the subscription for the evcc profile's commands,
+// `<name>/set/+/evcc/+/+` (`<sn>/evcc/<role>/<key>`). One level deeper than
+// [Layout.CommandFilter], so the two never match the same topic.
+func (l Layout) EVCCCommandFilter() string {
+	return l.Name() + "/" + topic.FunctionSet + "/+/" + evcc.Group + "/+/+"
 }
 
 // Renderer builds the shared-model description of this bridge's fleet.

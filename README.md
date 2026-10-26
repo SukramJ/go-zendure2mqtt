@@ -32,6 +32,10 @@ setup (pure Go, custom MQTT client, declarative catalog, distroless image).
   packs become their own sub-devices** with rich device-registry info.
 - **Virtual charge/discharge switches** — synthetic HA switches that write a mode
   + power-limit property set and derive their state from the report.
+- **evcc** — the shared evcc profile (with go-keba2mqtt and go-mtec2mqtt):
+  battery and PV meter values in evcc's units and signs plus evcc's battery
+  modes (`normal` / `hold` / `charge`), behind `EVCC_ENABLE`. See
+  [docs/evcc.md](docs/evcc.md).
 - **Diagnostic web UI** — optional read-only embedded SPA over `/api/health` +
   `/api/snapshot` (Home Assistant Ingress-friendly).
 - **mDNS discovery** + a diagnostic CLI (`zendure2mqtt-util`).
@@ -90,6 +94,8 @@ read-only dashboard is served on `WEB_BIND` (default `127.0.0.1:8080`).
 | `MQTT_TOPIC` | `zendure` | The instance name, the first level of every topic. |
 | `MQTT_MAINTENANCE` | `true` | Enable the [maintenance topics](#maintenance-topics). |
 | `MQTT_STATS_INTERVAL` | `60` | Seconds between `<name>/maintenance/stats` publishes; `0` switches them off. |
+| `EVCC_ENABLE` | `false` | Publish the [evcc profile](docs/evcc.md) (`<name>/status/<sn>/evcc/…`) and accept evcc's battery mode. |
+| `EVCC_BATTERYMODE_TIMEOUT` | `0` | Seconds a `hold`/`charge` stands without evcc sending it again before the bridge returns to `normal`; `0` = off. |
 
 > **`MQTT_TOPIC` is the only thing that keeps two instances apart.** Two
 > instances of this bridge on one broker (two sites, two cloud accounts) with

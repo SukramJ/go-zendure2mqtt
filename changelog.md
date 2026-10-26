@@ -1,4 +1,27 @@
-# Unreleased
+# Version 0.12.0 (2026-10-26)
+
+The shared evcc profile (#66). Off by default; updating needs no other
+action.
+
+## Added
+
+- **evcc profile** (`EVCC_ENABLE`, env `ZENDURE_EVCC_ENABLE`, add-on option
+  `evcc_enable`): every unit publishes `<name>/status/<sn>/evcc/battery/power`
+  (`packInputPower − outputPackPower`, positive while discharging),
+  `…/battery/soc` and `…/battery/batterymode`, plus `…/evcc/pv/power` on
+  units with solar inputs — the same MQTT surface as go-keba2mqtt and
+  go-mtec2mqtt, so one `evcc.yaml` style fits all three. See
+  [docs/evcc.md](docs/evcc.md).
+- **Battery control from evcc** (`<name>/set/<sn>/evcc/battery/batterymode`,
+  `1`/`normal`, `2`/`hold`, `3`/`charge`): `hold` sets `outputLimit` 0,
+  `charge` charges from AC at the unit's `chargeMaxLimit`, and `normal`
+  restores `acMode`, `inputLimit`, `outputLimit` and `smartMode` exactly as
+  they were. Only values the unit does not already report are written, so
+  evcc re-sending a mode costs nothing. The restore state is kept in memory:
+  after a restart during `hold`/`charge`, `normal` writes nothing.
+- `EVCC_BATTERYMODE_TIMEOUT` (add-on option `evcc_batterymode_timeout`,
+  default 0 = off): a `hold`/`charge` that evcc stops re-sending falls back
+  to `normal`.
 
 ## Security
 
