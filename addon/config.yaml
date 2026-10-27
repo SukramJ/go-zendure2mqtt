@@ -32,7 +32,7 @@ init: false
 ingress: true
 ingress_port: 8080
 panel_icon: mdi:solar-power
-panel_title: go-zendure2mqtt
+panel_title: Zendure
 
 # Optional host-port exposure (disabled by default — `null` publishes no port,
 # Ingress stays the primary path).
