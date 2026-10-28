@@ -1,1266 +1,207 @@
-# Unreleased
+# Changelog
 
-## Changed
+Changes to the **go-zendure2mqtt** Home Assistant add-on. The add-on version
+tracks the project release; see the project
+[changelog.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/changelog.md)
+for the full daemon details.
 
-- **The web UI follows Home Assistant's look** (go-bridgeui 0.4.0). In the
-  add-on panel it takes Home Assistant's live theme — colours, light/dark
-  mode and card style, custom themes included — and hides its own toggle.
-  Opened directly it uses Home Assistant's default light and dark palettes,
-  following the system preference, instead of the former navy theme.
-- **Add-on sidebar title** is now `Zendure` instead of `go-zendure2mqtt`.
+## 0.16.0
 
-# Version 0.15.0 (2026-10-26)
+The web UI now looks like Home Assistant: in the add-on panel it follows
+your Home Assistant theme (colours, light/dark, custom themes); opened
+directly it uses Home Assistant's default colours. The sidebar entry is
+now called **Zendure**.
 
-## Added
+## 0.15.0
 
-- **TLS to the MQTT broker.** `MQTT_TLS` connects to the output broker over
-  `tls://` instead of `tcp://`; an unset `MQTT_PORT` then defaults to 8883
-  (an explicit port always wins). `MQTT_TLS_CA` names a PEM CA bundle for a
-  broker signed by a private CA, and `MQTT_TLS_INSECURE` (dangerous, warned
-  about at startup) skips certificate verification. The two cannot be
-  combined; a CA file that cannot be used stops the daemon at startup with an
-  error naming it. Env overrides `ZENDURE_MQTT_TLS`, `ZENDURE_MQTT_TLS_CA`,
-  `ZENDURE_MQTT_TLS_INSECURE`. The Zendure cloud link is unchanged.
-- **Add-on.** New options `mqtt_tls`, `mqtt_tls_insecure`, `mqtt_tls_ca`; the
-  add-on maps `/ssl` and `/share` read-only so a CA bundle such as
-  `/ssl/ca.crt` can be used. With `mqtt_server` empty, a Home Assistant MQTT
-  service that reports TLS is now connected over TLS.
+TLS to the MQTT broker: new options `mqtt_tls`, `mqtt_tls_ca` and
+`mqtt_tls_insecure`. Put a private CA bundle under `/ssl` or `/share` and name
+it in `mqtt_tls_ca` (e.g. `/ssl/ca.crt`); set `mqtt_port` to the broker's TLS
+port (usually 8883). With `mqtt_server` empty, a Home Assistant MQTT service
+that reports TLS is now connected over TLS. Nothing changes for existing
+plaintext setups.
 
-## Changed
+## 0.14.0
 
-- go-bridgeui v0.3.0: the dashboard translates value names and problem
-  events through the bridge's labels, and a wide card no longer pushes the
-  page past the window.
-- go-mqtt v1.7.0.
+The web panel is now the shared go-bridgeui dashboard, the same as in the
+M-TEC and KEBA add-ons. It looks and works as before.
 
-# Version 0.14.0 (2026-10-26)
+## 0.13.0
 
-The web UI moves into the shared go-bridgeui module. MQTT and Home
-Assistant are unchanged.
+New web panel, the same as in the M-TEC and KEBA add-ons: status and
+reachability of every unit, recent problems, live values, battery packs, the
+evcc profile, and the unit's settings — which can now be changed from the
+panel (operating mode and flash-relevant settings ask first). Updates live.
+Nothing changes for MQTT or Home Assistant entities.
 
-## Changed
+## 0.12.1
 
-- **go-bridgeui.** The dashboard of 0.13.0 is now the shared
-  [go-bridgeui](https://github.com/SukramJ/go-bridgeui) module (v0.1.0),
-  which go-mtec2mqtt and go-keba2mqtt embed as well. It looks and works as
-  before.
-- **API.** `POST /api/write` names the unit as `device` instead of `sn`:
-  `{"device","key","value"}`. `/api/health`, `/api/status` and
-  `/api/snapshot` have go-bridgeui's shape (devices with `id`, entries with
-  `key` and `sub` for the pack), `/api/config` returns display tiles, and
-  `/api/ui` is new.
+The web panel now shows the **evcc** profile values (battery power, state of
+charge, battery mode, PV power) per unit when `evcc_enable` is on.
 
-# Version 0.13.0 (2026-10-26)
+## 0.12.0
 
-The web UI catches up with go-mtec2mqtt and go-keba2mqtt. MQTT and Home
-Assistant are unchanged.
+New: the shared **evcc** profile, off by default (`evcc_enable`). evcc can
+read each SolarFlow as a battery (and PV) meter and switch it between
+`normal`, `hold` (no discharge) and `charge` (charge from AC); `normal`
+restores your previous settings. `evcc_batterymode_timeout` returns the
+battery to `normal` when evcc stops. Setup and the `evcc.yaml` snippet:
+[docs/evcc.md](https://github.com/SukramJ/go-zendure2mqtt/blob/main/docs/evcc.md).
+Existing entities, options and behaviour are unchanged.
 
-## Changed
+## 0.11.0
 
-- **New dashboard.** The embedded UI now has the sibling bridges' layout:
-  a sidebar (Status · Live · Battery packs · evcc · Control · System), a
-  light/dark theme toggle, German and English (`LANGUAGE`), and a unit picker
-  when the bridge serves more than one SolarFlow. It updates live over
-  Server-Sent Events instead of polling every 5 seconds.
-- **Diagnostics.** Health shows the Zendure link (local/cloud), the MQTT
-  broker, Home Assistant, evcc and uptime; every unit shows whether it is
-  reachable and how old its data is; a "Recent problems" list shows refused
-  or failed commands, from MQTT and from the UI alike. The configuration
-  (without the cloud token or passwords) is shown under System.
-- **Control.** The unit's writable settings, the charge/discharge switches
-  and, with `EVCC_ENABLE`, the evcc battery mode can be set from the UI. A
-  write takes exactly the path of an MQTT `set` — same conversions, limits,
-  refusals and log lines. AC mode, smart mode, max inverter power and the
-  two switches ask for confirmation first (they change the operating mode or
-  what the unit stores in flash); the catalog marks them with the new
-  `confirm: true`.
-- **API.** New: `GET /api/status`, `/api/items`, `/api/config`, the SSE
-  stream `/api/events` and `POST /api/write` (`{"sn","key","value"}`, JSON
-  only, same-origin only). `/api/health` has a new shape (status, upstream,
-  problems); `/api/snapshot` is unchanged apart from the units' `online`.
-  Assets are served with a content-hash ETag, so a browser picks up a new UI
-  after an update.
-- **Security.** The UI can now write to the units: set `WEB_USER` /
-  `WEB_PASSWORD` when `WEB_BIND` is reachable beyond localhost. The add-on
-  serves the UI through Ingress, which authenticates.
+Dependency update (go-hamqtt 0.37.0); no change to entities, options or
+behaviour. Updating needs no other action.
 
-# Version 0.12.1 (2026-10-26)
+## 0.10.1
 
-## Changed
+Fixes for 0.10.0; updating needs no other action.
 
-- **Web UI shows the evcc profile.** With `EVCC_ENABLE` on, every unit's
-  card gets an "evcc profile" block right after the live values: battery
-  power, state of charge, battery mode and (on units with solar inputs) PV
-  power, labelled in the configured language with their units. The battery
-  mode updates as soon as evcc changes it. The header shows whether the
-  profile is active (`/api/health` gains `evcc_enabled`). MQTT is unchanged.
-
-# Version 0.12.0 (2026-10-26)
-
-The shared evcc profile (#66). Off by default; updating needs no other
-action.
-
-## Added
-
-- **evcc profile** (`EVCC_ENABLE`, env `ZENDURE_EVCC_ENABLE`, add-on option
-  `evcc_enable`): every unit publishes `<name>/status/<sn>/evcc/battery/power`
-  (`packInputPower − outputPackPower`, positive while discharging),
-  `…/battery/soc` and `…/battery/batterymode`, plus `…/evcc/pv/power` on
-  units with solar inputs — the same MQTT surface as go-keba2mqtt and
-  go-mtec2mqtt, so one `evcc.yaml` style fits all three. See
-  [docs/evcc.md](docs/evcc.md).
-- **Battery control from evcc** (`<name>/set/<sn>/evcc/battery/batterymode`,
-  `1`/`normal`, `2`/`hold`, `3`/`charge`): `hold` sets `outputLimit` 0,
-  `charge` charges from AC at the unit's `chargeMaxLimit`, and `normal`
-  restores `acMode`, `inputLimit`, `outputLimit` and `smartMode` exactly as
-  they were. Only values the unit does not already report are written, so
-  evcc re-sending a mode costs nothing. The restore state is kept in memory:
-  after a restart during `hold`/`charge`, `normal` writes nothing.
-- `EVCC_BATTERYMODE_TIMEOUT` (add-on option `evcc_batterymode_timeout`,
-  default 0 = off): a `hold`/`charge` that evcc stops re-sending falls back
-  to `normal`.
-
-## Security
-
-- Built with Go 1.27.3: GO-2026-6809 (`crypto/x509`, fixed in 1.27.3) is
-  reachable through the cloud backend's TLS connect (`cloud.Backend.connectLoop`
-  → `mqtt.TCPClient.Connect`), which govulncheck reports on 1.27.2. go.mod,
-  the workflows and both Dockerfiles move together.
-
-# Version 0.11.0 (2026-10-12)
-
-Dependency update; no behaviour change. Updating needs no other action.
-
-## Changed
-
-- go-hamqtt 0.36.0 -> 0.37.0 (discovery findings with Home Assistant's
-  scope, opt-in containment). The bridge keeps publishing its device
-  documents exactly as before: its publish path never withheld a document
-  on a validation error, so there is nothing to relax.
-
-## Security
-
-- Built with Go 1.27.2, which fixes Go standard-library vulnerabilities
-  (net/http and HTTP/2, crypto/tls, net/textproto, html/template).
-- golangci-lint v2.14.0 (reads Go 1.27.2's export data).
-
-# Version 0.10.1 (2026-10-06)
-
-Fixes for 0.10.0. Updating needs no other action: Home Assistant picks up
-the corrected discovery documents by itself, and no entity id, name or
-history changes.
-
-## Fixed
-
-- **Cloud mode: after a dropped cloud session, devices stayed unavailable
-  until they happened to report again.** 0.10.0 set every device's
-  `<name>/status/<sn>/online` to `false` when the session dropped and only
-  that device's next report set it back, so a quiet device stayed
-  unavailable in Home Assistant although the session was back and
-  `<name>/connected` was `2`. A drop now shows on `<name>/connected` (`1`)
-  only, and every device is set `online` again the moment the session is
-  restored. The cloud reports no per-device online state, so in cloud mode
-  `online` means "listed by the cloud".
-- **Local mode: one missed poll made a device unavailable.** A single slow
-  or lost answer set its `online` to `false` — and on a single-device install
-  also `<name>/connected` to `1`, so every entity went unavailable for one
-  poll. A device is now unreachable at its second failed poll in a row and
-  reachable again at its next answer.
-- **The AC mode or smart mode could show a wrong or stale option.** A code
-  the catalog does not know was published as a raw number that Home
-  Assistant rejected as an invalid option, so the select kept showing its
-  last valid option; a value that was no number at all was read as code 0
-  and shown as *persist* for the smart mode. Such a value now keeps its raw
-  value on the wire (`{"val": 7}`), never becomes a token it is not, shows as
-  *unknown* in Home Assistant, and is logged once per device, property and
-  value (`coordinator.unmapped_value`) so the catalog can be extended. The
-  same rule applies to any sensor with a value map.
-- **A value that became empty kept showing its old state**, with a template
-  error in Home Assistant's log for each clear. Sensors, numbers and selects
-  now show a cleared item as *unknown*.
-- **After a broker restart without persistence the discovery documents were
-  not sent again** (only on Home Assistant's birth message, which this
-  bridge can miss when both reconnect), so Home Assistant's next restart
-  found no entities. Every broker (re)connect now republishes them — the
-  per-entity configs of 0.7.x and earlier are still cleared first — and
-  publishes each device's current `online` instead of replaying a value that
-  went stale while the broker was away.
-
-## On the wire
-
-- Discovery: the `value_template` of every sensor, number and select (no
-  identity, topic or other key changes); switches and availability are
-  unchanged.
-- `<name>/status/<sn>/config/smart_mode` (and any value-mapped item) carries
-  the raw value instead of the token of code 0 when the device reports a
-  value that is no code.
-- `<name>/status/<sn>/online`: no longer `false` on a cloud session drop;
-  locally `false` one poll later than before.
-- On every broker reconnect: each device document, preceded by the
-  retractions of the per-entity configs of 0.7.x and earlier (empty retained
-  payloads, as on start), and each device's current `online` item.
-
-# Version 0.10.0 (2026-10-06)
-
-## What's Changed
-
-### Breaking: the MQTT topics follow mqtt-smarthome 2.0
-
-All six projects of this family move to one topic convention,
-[mqtt-smarthome 2.0](https://github.com/mqtt-smarthome/mqtt-smarthome/blob/master/SPEC.md),
-in one wave (openccu-loom ADR 0083). This is a clean break: no switch
-publishes the old topics. **Home Assistant users have nothing to do**; anyone
-reading the raw topics (Node-RED, dashboards, Telegraf, scripts) must move.
-
-| Old | New |
-|---|---|
-| `zendure2mqtt/<sn>/<group>/<key>/state` | `zendure/status/<sn>/<group>/<key>` |
-| `zendure2mqtt/<sn>/battery/<packSn>/<key>/state` | `zendure/status/<sn>/battery/<packSn>/<key>` |
-| `zendure2mqtt/<sn>/<group>/<key>/set` | `zendure/set/<sn>/<group>/<key>` |
-| `zendure2mqtt/bridge/status` (`online`/`offline`) | `zendure/connected` (`0`/`1`/`2`) |
-| — | `zendure/status/<sn>/online`, `zendure/info`, `zendure/maintenance/…` |
-
-- **The default name is `zendure`** (was `zendure2mqtt`). A configured
-  `MQTT_TOPIC` is kept verbatim — so an installation that copied
-  `MQTT_TOPIC: zendure2mqtt` from the old template publishes under
-  `zendure2mqtt/status/…`. `MQTT_TOPIC` is the only thing that keeps two
-  instances on one broker apart; two instances need different names.
-- **Every status value is a status object**, `{"val": …, "ts": …, "lc": …}`
-  with millisecond timestamps. Numbers are JSON numbers in display units; the
-  AC and smart modes carry their stable English token (`charge`, `discharge`,
-  `persist`, `volatile`) instead of the label of the configured `LANGUAGE`;
-  the virtual switches are `true`/`false` instead of `1`/`0`. A value is
-  published when it changes and after every broker reconnect, no longer on
-  every poll.
-- **`<name>/connected`** replaces `bridge/status`: `0` from the Last Will and
-  on a graceful stop, `1` while the upstream is unusable, `2` while it works —
-  locally while at least one device answers its poll, in the cloud while the
-  cloud session is up. **`<name>/status/<sn>/online`** is new and says whether
-  that device answers.
-- **`set`** takes a plain value or `{"val": …}` on the status item's own path.
-  Enums take their token in any case, either label, or the raw code; the
-  switches take `true/false`, `1/0`, `on/off`, `yes/no` (anything else used
-  to mean "off" and is now rejected). Empty and retained messages are
-  ignored, the subscription is QoS 1 (was 0), and a rejected or failed
-  request is logged at `warn` with topic and payload.
-- **`<name>/info`** (retained, on every connect): `name` `go-zendure2mqtt`,
-  `version`, `spec`, `go`, `host`, `pid`, `started`, `maintenance`, `commit`,
-  `build_date`, `connection`.
-- **Maintenance topics**, on by default: `<name>/maintenance/set/loglevel`,
-  `<name>/maintenance/set/restart` (graceful stop with exit 0, only where a
-  supervisor restarts the daemon — `ZENDURE_SUPERVISED`, else detected) and
-  `<name>/maintenance/stats`. New keys `MQTT_MAINTENANCE` (default `true`) and
-  `MQTT_STATS_INTERVAL` (default `60`, `0` = off). **Anyone who may publish on
-  the broker can use them** — restrict the broker with ACLs or set
-  `MQTT_MAINTENANCE: false`.
-- `MQTT_TOPIC` containing `+` or `#` (or starting with `$`) is now refused at
-  start; such a name never worked.
-
-### Home Assistant
-
-- `unique_id`, device identifiers, node ids and the discovery topics are
-  **unchanged**: they stay on the identity root, which is `MQTT_TOPIC` when set
-  and `zendure2mqtt` when not — not the new default name. Entities re-point to
-  the new topics and keep their ids, names, areas, history and automations.
-  (Changing `MQTT_TOPIC` deliberately still re-keys every entity.)
-- Every entity is now available only while `<name>/connected` is `2` **and**
-  its unit's `online` is `true` (`availability_mode: all`): an unreachable
-  device no longer shows its last values as current.
-- The select options are still shown in the configured language; the state
-  carries the token and discovery maps it to the label and back.
-
-### Migration
-
-On every start the daemon clears what the old layout left retained under the
-old root (`MQTT_TOPIC` if set, else `zendure2mqtt`): `<old>/bridge/status`,
-and for each device serial it knows exactly `<old>/<sn>/<group>/<key>/state`,
-`<old>/<sn>/battery/<packSn>/<key>/state` and their `…/set`. Never by prefix,
-never another instance's devices, never a topic whose second level is a
-function name. Rolling back to 0.9.x needs no discovery step; the new layout's
-retained topics then stay until cleared.
-
-### Add-on
-
-- `mqtt_topic` may be empty and is empty for new installs (= `zendure`);
-  existing installs keep their saved value. New options `mqtt_maintenance` and
-  `mqtt_stats_interval`. The maintenance restart is refused in the add-on.
-
-### Internal
-
-- go-hamqtt v0.36.0: `topic.SmartHome`, the status-object encoding,
-  `CommandRouter.HandleSet`, `Runtime.SetConnected`, `publisher.Instance`.
-- The `set` path moved from a raw subscription to go-hamqtt's
-  `CommandRouter`; writes run on its workers. The post-write re-read stays.
-- The backends report upstream and per-device reachability through a new
-  `source.Observer`.
-
-# Version 0.9.0 (2026-10-02)
-
-## What's Changed
-
-- Built with Go 1.27.1. Nothing changes for running the bridge or the add-on: no option, topic, entity or discovery payload moves. Building from source now requires Go 1.27.1 or newer.
-- Dependency update: the MQTT client library (go-mqtt v1.6.0), the Home Assistant catalog (go-ha-catalog v0.3.0) and the discovery library (go-hamqtt v0.35.0) move to their Go 1.27 releases.
-- Internal: the source was modernised with the Go 1.27 `go fix` analyzers and `strings.CutLast`/`strings.Cut`/`strings.SplitSeq`; behaviour is unchanged.
-- Internal: `internal/zendure/cloud` gained tests (login signing, error paths, inbound routing; package coverage 6.5% to 45.6%). No production behaviour changed.
-
-# Version 0.8.0 (2026-09-14)
-
-## What's Changed
-
-### If you run this bridge, read this first
-
-This is the ADR 0070 pilot release, and it is the one release of this project
-so far that moves a published byte. Three things decide whether an upgrade is
-uneventful.
-
-1. **The Home Assistant discovery form changed: one retained *device
-   document* per device, replacing 29 per-entity configs.** The first start
-   after the upgrade retracts the old configs and *then* publishes the
-   documents, in that order. You should see nothing happen — `unique_id` is
-   byte-identical to 0.7.x, so every entity keeps its id, name, icon, area,
-   history and every automation that names it. **Home Assistant 2024.11 or
-   newer is required from this release on.**
-
-2. **A rollback to 0.7.x is not just installing the old version.** The
-   retained device documents stay on the broker, and an older release's
-   per-entity configs are then refused by Home Assistant with one
-   `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
-   and no entities. Clear each document first —
-   `mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n`, one
-   per device and per battery pack. **Take `<topic>` verbatim from the
-   daemon's new `hass.bundle_published` log line rather than composing it**:
-   the prefix is your `HASS_BASE_TOPIC` (which defaults to `homeassistant`
-   but is an operator setting — instructions that hardcoded
-   `homeassistant/` were wrong), and the node id carries `MQTT_TOPIC` and the
-   serial as the device reports it. The corrected procedure is in
-   [`README.md`](README.md), in the migration note below, and in
-   [`addon/DOCS.md`](addon/DOCS.md).
-
-3. **A defect fixed in this release: after a broker reconnect, most entities
-   could silently fail to appear.** The retraction of the old configs was
-   remembered for the lifetime of the process, not per connection, so a
-   reconnect re-sent only 7 of 29 retractions and published the device
-   documents anyway — leaving 22 of 29 entities absent, with nothing in this
-   daemon's log and nothing on the wire to say so, until the process was
-   restarted. Fixed.
-
-### Fixed
-
-- **The daemon could have lost the statement that makes the discovery
-  migration work, with every test still green.** The per-entity topic form
-  this fleet's 29 retained configs are on
-  (`publisher.Config.LegacyEntityTopics`) was spelled once in the composition
-  root and again in the test fixtures, and nothing compared the two. Deleting
-  it from the daemon left the whole suite passing — the fixtures went on
-  exercising a runtime that still carried it — while the shipped binary would
-  have retracted 29 topics that do not exist and then published its device
-  documents into a tree still holding the real per-entity configs. Home
-  Assistant refuses that with one
-  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
-  in its own log: no error on the wire, nothing in this daemon's log, and no
-  entities.
-
-  There is now one spelling, `coordinator.HARuntimeConfig`, which the
-  composition root and every fixture build from; the coordinator's
-  constructor refuses to start a daemon whose runtime was not built from it,
-  with a panic naming the consequence. No published byte changes.
-
-- **The state plane's pulse QoS is now stated.** `StateConfig.PulseQoS` is
-  the one field in go-hamqtt whose default is QoS 0 rather than QoS 1, so
-  leaving it unset was correct only by coincidence — and since go-hamqtt
-  v0.34.0 the omission has been logged as
-  `publisher.state.pulse_qos_unstated` at every boot. Stated explicitly; the
-  wire byte is unchanged.
-
-- **The downgrade instructions were wrong for anyone who changed
-  `HASS_BASE_TOPIC`, and unusable on an authenticated broker.** They
-  hard-coded `homeassistant/`, so an operator who changed the prefix would
-  have cleared nothing and the downgrade would have failed as silently as the
-  upgrade it mirrors; and the `mosquitto_pub` line carried no `-h`/`-u`/`-P`
-  although the add-on documentation points its readers — all of whom are on an
-  authenticated Supervisor broker — straight at it. `README.md` now has its
-  own rollback section (it had none), and all three documents tell you to copy
-  the topic verbatim from the daemon's new `hass.bundle_published` log line
-  rather than compose it.
-
-- **After an MQTT reconnect during the first discovery publish, most entities
-  silently never appeared in Home Assistant.** One
-  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
-  in Home Assistant's log was the only evidence: no error on the wire, and
-  nothing at all in this daemon's log, because as far as it could tell both
-  publishes had succeeded.
-
-  `publisher.Runtime` records a superseded per-entity config as cleared the
-  moment `Transport.Publish` returns nil. This bridge publishes its whole
-  discovery plane at QoS 0, where that return means `Write` and `Flush`
-  returned and says nothing about a broker having applied anything. The memo
-  is per *process*; the success it records is per *connection*. So a
-  retraction written to a socket that is already going away was recorded as
-  done; the device document that followed it failed and was correctly
-  withheld; and once the link came back, the retry skipped every memoised
-  retraction and published the document into a tree that still held the old
-  per-entity configs — which is exactly the conflict Home Assistant refuses.
-
-  `Coordinator.PublishOnline`, which the MQTT lifecycle calls on every
-  (re)connect, now calls `publisher.Runtime.Reset()` beside the state plane's
-  existing reset, so the per-connection half of the runtime's memory is
-  forgotten when the connection is. Measured on this fleet before the fix: of
-  29 retractions only 7 were re-sent, both device documents were published,
-  and 22 legacy per-entity configs were still retained — i.e. 22 of 29
-  entities would not have appeared. Pinned by
-  `TestRetractionsAreReSentAfterAReconnect`, which drives a reconnect rather
-  than a process restart; a restart forgets the memo for free and is why the
-  same gap survived a release in a sibling bridge.
-
-  No published byte changes. `Runtime.Declared()` and `Runtime.Claimed()`
-  survive the reset, which is why this is `Reset` and not the rebuilt-runtime
-  shape the library recommends: `Declared()` is the claim set the orphan
-  sweep subtracts, and a runtime rebuilt per connection would start with it
-  empty and judge live documents orphans.
-
-### Added
-
-- **`hass.bundle_published`**, one `INFO` line per retained device document,
-  carrying the whole topic. It is the string the downgrade instructions send
-  you to, because neither half is safely guessable: the prefix is
-  `HASS_BASE_TOPIC` and the node id carries `MQTT_TOPIC` and the serial in the
-  case the device reports it.
-
-### Changed
-
-- **`go-hamqtt` 0.27.0 → 0.34.0** (and `go-mqtt` 1.4.0 → 1.5.1, its new
-  minimum). Needed for `publisher.Runtime.Reset` above. The upgrade is
-  additive: no exported signature changed, and every pinned discovery payload
-  and state topic in this repository still matches byte for byte.
-
-### Added
-
-- **Home Assistant's birth message is now watched, so a broker that loses
-  its retained store no longer leaves Home Assistant empty until the daemon
-  is restarted.** This bridge had no `<hass_base>/status` subscription at
-  all — all four of its `Subscribe` sites were accounted for and none was
-  that one. Discovery configs are retained, so a Home Assistant restart was
-  always survived; a broker restarted without persistence, or one whose
-  retained store was cleared, was not, and nothing in the logs said so.
-  `publisher.Runtime.WatchBirth` now replays every config this process has
-  declared on the rising edge of that message, on a worker goroutine rather
-  than inline on the read loop. This was F6 of the ADR 0070 phase-5
-  measurement.
-
-  Adopting it adds a *subscription*; the replay it performs publishes the
-  same retained configs this process already wrote, byte for byte, and only
-  when Home Assistant announces itself.
-
-### Changed
-
-- **BREAKING (discovery format): Home Assistant discovery moves from 29
-  retained per-entity configs to one retained device document per device.**
-  ADR 0070 phase 5, step 5 — the last step of the pilot and the only one that
-  moves a published byte.
-
-  **Old format:** `homeassistant/<platform>/<unique_id>/config`, one retained
-  message per entity, each repeating the full `device` block — 29 messages for
-  one SolarFlow with one battery pack.
-
-  **New format:** `homeassistant/device/<node_id>/config`, one retained
-  message per Home Assistant device, carrying the device block once, an
-  `origin` block, and every one of that device's entities as a component. The
-  node id is the device identifier this bridge already published —
-  `zendure2mqtt_<sn>` for the unit, `zendure2mqtt_<sn>_pack_<packSn>` for each
-  battery pack. Two messages replace 29, and an update to the entity set is
-  one atomic write instead of 29 independent ones. Home Assistant 2024.11 or
-  newer is required from this release on.
-
-  **What you will see.** Nothing, if the upgrade goes as intended. On the
-  first start after the upgrade the bridge retracts the old per-entity configs
-  and then publishes the device documents, in that order, and your entities
-  stay exactly where they were.
-
-  **Your history, names, icons and automations survive**, and the reason is
-  that nothing was re-keyed. `unique_id` is byte-identical to the previous
-  release, and `unique_id` is what Home Assistant keys its entity registry
-  on: an entity whose unique id is unchanged keeps its entity id, its custom
-  name, its icon, its area, its device assignment, its long-term statistics
-  and every automation and dashboard that names it. ADR 0070 permits the
-  bridges a clean break here and this one declines it — which is why this
-  bridge was chosen as the pilot: identity frozen means the runtime is proved
-  on an installed base without confounding. `default_entity_id`,
-  `state_topic`, `command_topic`, `availability_topic`, `payload_available`,
-  `payload_not_available`, the device `identifiers` and `via_device` are
-  byte-identical too. The only additions to any payload are `origin` (which
-  Home Assistant requires on a device document) and each component's
-  `platform` (which the old topic carried in its second segment). There is no
-  migration to run and nothing to delete by hand.
-
-  **The old configs are cleared for you**, and the order matters: the
-  retraction comes first. Home Assistant refuses a device document while a
-  per-entity config for the same `unique_id` is still retained, and the only
-  evidence is one `WARNING [mqtt.entity] Received a conflicting MQTT
-  discovery message` line in its log — the entities simply would not appear.
-  The retraction is therefore not a tidy-up, it is the precondition; a device
-  whose retraction fails has its document withheld and retried on the next
-  poll rather than published into a conflict. Per-entity configs left behind
-  by entities that were removed or renamed in some *earlier* release are
-  cleared by the orphan sweep on the first start, so no duplicate ghost
-  entities are left standing either.
-
-  **If the first start is interrupted between the two steps**, the affected
-  device's entities are briefly *absent* rather than unavailable. Restarting
-  the bridge restores them; nothing is lost.
-
-  **Downgrading needs one manual step.** Going back to 0.7.x or earlier is
-  not just installing the old version: the retained device documents stay on
-  the broker, and an older bridge republishing per-entity configs is refused
-  by Home Assistant for exactly the same reason, symmetrically, with the same
-  single log line. Before downgrading, clear every retained document by
-  publishing an empty retained payload to it:
-
-  ```bash
-  mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n
-  ```
-
-  **Take `<topic>` verbatim from the daemon's own `hass.bundle_published`
-  log line**, one per device and per battery pack, rather than composing it.
-  It is `<HASS_BASE_TOPIC>/device/<node-id>/config`, and both halves are
-  things only the running daemon knows for sure: the prefix is
-  `HASS_BASE_TOPIC`, which defaults to `homeassistant` but is an operator
-  setting, and the node id is the device identifier as this bridge spells it
-  (`<MQTT_TOPIC>_<sn>`, and `<MQTT_TOPIC>_<sn>_pack_<packSn>` for each pack)
-  — the serial in its original case, deliberately not slugged. `-h`, `-u` and
-  `-P` are required on an authenticated broker, which the Home Assistant
-  Mosquitto add-on is; drop them only for an anonymous broker on localhost.
-  Because nothing was re-keyed, the old release then re-adopts the same
-  entities with their history intact.
-
-  **`MQTT_TOPIC` must not be changed.** Not new, but this is the release to
-  say it: it namespaces every `unique_id`, so changing it orphans every
-  entity *and* leaves the old retained configs unrecognisable to the cleanup,
-  which can then never remove them.
-
-- **`internal/harender` is now the production renderer.** The parallel
-  rendering path built to prove the shared go-hamqtt model reproduces this
-  bridge's payloads byte-for-byte — 29 of 29 entities, identity frozen,
-  publishing nothing — is the only renderer left. `internal/hass` keeps the
-  identity formulas the migration froze (`UniqueID`, `DeviceName`,
-  `EntityObjectID`) and the ownership rules the orphan sweep needs, and
-  publishes what harender renders through
-  `publisher.Runtime.PublishBundle` — which is what implements the
-  retract-then-publish order and aborts before the document if a retraction
-  fails. The hand-rolled payload builder it replaces is gone.
-
-  The pins moved with it, and only in the two ways this step is allowed to
-  move them. `testdata/discovery_unit.json` and `discovery_pack.json` now
-  record each entity's effective config — its component body plus the
-  document's device and origin blocks — under the document's topic;
-  `testdata/discovery_bundles.json` pins the retained documents verbatim; and
-  `testdata/legacy_per_entity_configs.json` freezes the 29 pre-migration
-  configs read-only, as the record of the installed base every identity
-  assertion is still made against. `testdata/state_topics.json` is unchanged,
-  byte for byte — the state plane did not move.
-
-- **The orphan sweep recognises both discovery forms.** It has to: the device
-  documents are the current form, and the per-entity configs of every earlier
-  release are still retained on every installed broker. A sweep blind to
-  either would leave that form standing forever.
-
-- **Birth, Last Will and the orphan sweep now run on
-  `publisher.Runtime`.** ADR 0070 phase 5, step 4. Discovery configs are
-  published through the runtime rather than straight to the MQTT client, so
-  the runtime knows what this process claims — which is what the orphan
-  sweep compares against and what the birth resync replays.
-
-  - **The Last Will is no longer a literal.** It is read from
-    `publisher.Runtime.Will()`, which returns the same topic and the same
-    payload the online/offline announcements write. A will whose topic no
-    published entity references is the measured defect of two sibling
-    bridges — the broker writes "offline" where nothing reads it and every
-    entity stays available forever — and this bridge already had it right;
-    now it cannot get it wrong. `<root>/bridge/status` is stated once, in
-    `coordinator.BridgeStatusTopic`, and pinned against the shared model's
-    `Layout.Bridge()`.
-  - **The orphan sweep is the library's snapshot window**, which owns the
-    parts that were hard: one window at a time per process (two windows on
-    one filter left the second handler installed over the first and the
-    first teardown unsubscribed for both), the parsing of all three
-    discovery topic forms, and the claim check that keeps a config still
-    inside its own publish call from being judged an orphan. The pass is
-    report-only and this bridge retracts what it chose, because its
-    ownership rule is the stronger one: the retained *payload* must carry a
-    `unique_id` in this bridge's namespace and a state topic under its MQTT
-    root, and a pass that judged on the topic alone would have widened what
-    this daemon is willing to delete from a shared discovery tree. Scoping
-    to one device is kept, and a config the runtime still claims is now
-    excluded as well — a safety net the hand-rolled version did not have.
-
-  **Nothing on the wire moved.** Same config topics, same config payloads,
-  same retraction (an empty retained payload), same announcements
-  (`online`/`offline`, retained) and the same QoS 0 throughout —
-  `publisher.QoSAtMostOnce`, stated, because the library reads a zero QoS as
-  *unset* and resolves it to 1. The four pinned fixtures were not
-  regenerated and hold byte-for-byte, and a new pin reads the QoS and the
-  retain flag off the transport call for every publish the bridge makes.
-
-  Home Assistant discovery must be enabled for the birth subscription; the
-  availability announcements and the Last Will are unconditional as before.
-
-### Not fixed, and why
-
-- **F4 — there is no per-device availability.** A failed poll is still
-  logged and dropped, so while the bridge is up and a device is unplugged
-  its entities stay *available*, showing the last value they ever saw. The
-  shared library has the vocabulary for it (`model.LevelDevice` plus
-  `AvailabilityPublisher.Device`) and it is the single biggest user-visible
-  improvement left in this migration.
-
-  It was deferred *to* the device-document step, and it is deferred once more
-  — now to its own release, which is the last time it can be. The reason has
-  changed. Before, it was that an `availability` entry per entity moves every
-  pinned fixture; now the fixtures have moved anyway, so that argument is
-  spent. What replaces it is that this release's entire claim is that the
-  payload diff contains the topic shape and the `origin` block and nothing
-  else — that claim is checked field by field, and it is what makes the one
-  step that touches an installed base reviewable. Availability in the same
-  diff would have destroyed it. It is also not only a discovery change: a
-  device availability topic needs something to publish to it, and the backend
-  produces no reachability signal today, so the work is a state-plane change
-  as much as a payload one. The flat `availability_topic` every entity names
-  keeps working either way.
-- **F1, F3, F5, F7, F8** are unchanged, as recorded in the measurement. In
-  particular a discovery config is still published once per process and
-  never updated however much it changes (F1): routing configs through the
-  runtime's payload-comparing gate would have fixed it as a side effect, and
-  the already-sent guard is kept deliberately so that a device reporting a
-  field intermittently cannot flap its retained config on every poll. That
-  fix wants a monotonic enrichment rule, and its own commit.
-
-  One consequence of one document per device is worth naming rather than
-  discovering: when a *new* entity appears mid-process its device's whole
-  document is rewritten, so that single write also carries the current
-  bodies of its siblings. That narrows F1 — it does not fix it, and the
-  steady state is still that the first report of a process decides the
-  retained document for the rest of it. There is one document per device; it
-  cannot be written per entity.
-
-### Changed
-
-- **State is no longer re-published when it has not changed.** Every point
-  this bridge resolves now goes out through `publisher.StatePublisher` from
-  `go-hamqtt`, whose dedup gate compares the payload bytes against what the
-  broker last accepted and writes nothing when they are equal. Before this
-  release the publish loop wrote all 30 retained state topics on every poll
-  — with the default 15 s interval that is roughly 7 000 messages an hour
-  per device, nearly all of them byte-identical to the value already
-  retained on the broker. A `packNum` or `chargeMaxLimit` sensor now
-  publishes once per process.
-
-  **Nothing about the wire moved except the number of messages.** Same
-  topics, same payloads, same retain flag and the same QoS 0 — the payload
-  is still rendered by this repository's own `formatValue`, not by the
-  library's renderer, because the two disagree on a Go bool (`"1"`/`"0"` here
-  against `"true"`/`"false"` there) and a state-plane migration is not the
-  place to change a payload. The QoS is stated explicitly with
-  `publisher.QoSAtMostOnce`: the library's zero value means *unset* and
-  resolves to QoS 1, so adopting the runtime naively would have changed the
-  delivery guarantee of every installed deployment. That is an inherited
-  choice being preserved and not an endorsement — a message lost at QoS 0 is
-  lost, and the broker then keeps serving the previous retained value until
-  the datapoint next changes.
-
-  **What a downstream consumer may notice:** anything that counted messages
-  rather than reading the retained value — a second MQTT subscriber, a
-  Node-RED flow triggered on message rather than on change — now sees far
-  fewer of them. Home Assistant is unaffected; it reads state, not message
-  rates.
-
-  On every (re)connect the gate is reopened (`StatePublisher.Reset`) so a
-  broker that came back without its retained store is rewritten by the next
-  poll instead of being left blank until each value happens to change.
-
-  The state plane is also now checked against this bridge's own command
-  subscription: a state topic that fell inside `<root>/+/+/+/set` would have
-  been echoed straight back into the command handler, and the filter is
-  stated once (`coordinator.CommandFilter`) and read by both the subscriber
-  and the guard. All 30 published state topics are asserted to clear it.
-
-  This is ADR 0070 phase 5, step 3. The four pinned fixtures were not
-  regenerated and hold byte-for-byte; a new pin reads the QoS and the retain
-  flag off the transport call itself, which no golden file can see.
-
-### Added
-
-- **The shared Home Assistant discovery library now provably reproduces this
-  bridge's published payload, byte for byte, for all 29 entities — and
-  publishes nothing.** `github.com/SukramJ/go-hamqtt v0.27.0` is a new
-  dependency and `internal/harender` is a second, parallel rendering path
-  built on it: a `topic.Layout` over this bridge's own topic builder, one
-  `model.Device` per unit and per battery pack, a `model.Basic` entity per
-  resolved point, and a `discovery.Context` that freezes every identity
-  string. New tests in `internal/coordinator` render that model through
-  `discovery.RenderComponent` and compare the result against the four golden
-  files pinned in the previous release.
-
-  They match exactly. All 29 discovery payloads and all 29 retained config
-  topics, plus all 14 payloads of the identity-hazard pin, are identical to
-  what `internal/hass` publishes today — `unique_id`, `default_entity_id`,
-  device `identifiers`, `via_device`, `state_topic`, `command_topic`, the
-  flat `availability_topic` / `payload_available` / `payload_not_available`
-  triple, `device_class`, `state_class`, `unit_of_measurement`, `min`/`max`/
-  `step`, `options`, `payload_on`/`payload_off`, `model_id`,
-  `serial_number`, `configuration_url` and `sw_version`. So are all 30 state
-  topics and all nine command topics. `discovery.Validate` accepts the
-  rendered device bundles and `discovery.ValidateBody` accepts every payload
-  — including the flat availability triple, which was an open question, and
-  which no test in this repository had ever checked against Home Assistant's
-  schemas at all.
-
-  **Nothing about the daemon changes.** `internal/harender` is imported by
-  tests only; no publish path, no MQTT bootstrap and no discovery payload is
-  touched, and the pinned fixtures were never regenerated. This is ADR 0070
-  phase 5, step 2 — the pilot's decisive experiment, run on a branch with
-  nothing on a broker, because the alternative place to discover a mismatch
-  is a user's Home Assistant, where a changed `unique_id` silently costs an
-  entity its history and a changed `state_topic` silently makes it unknown
-  forever.
-
-  Four things the experiment settled that reading the library could not:
-  the rendered bytes; that the flat availability keys validate; that
-  `publisher.LegacyTopicByUniqueID` — and not `LegacyTopicByObjectID`, and
-  not the pre-v0.27.0 five-segment default — is the form that matches this
-  fleet's 29 retained config topics, which is what the eventual bundle
-  migration has to retract before it publishes; and that `model.Slot`'s
-  `Bucket` is provably inert for this bridge, which is now asserted rather
-  than assumed.
-
-  Also exported, additively and with no behaviour change: `hass.UniqueID`,
-  `hass.EntityObjectID`, `hass.DeviceName`, `hass.PackSoftVersion` and
-  `catalog.Entry.Codes`. The parallel path calls the production identity
-  functions rather than restating them, so the two paths cannot drift — and
-  so that the two pinned *defects* stay reproduced: the pack-serial
-  hyphen-vs-underscore `default_entity_id` collision, and the dropped "é".
-
-### Added
-
-- **The published Home Assistant discovery payload is now pinned, byte for
-  byte.** `internal/coordinator/testdata/` holds four new golden files: the
-  29 retained discovery configs a SolarFlow 2400 AC with one battery pack
-  produces (22 on the main unit, 7 on the pack sub-device — 20 sensors,
-  5 numbers, 2 selects, 2 virtual switches), the 30 state topics that go with
-  them, and the four device-name and pack-serial inputs whose entity-id seeds
-  no test had ever exercised. They are captured through the real publish path
-  over the shipped `zendure.yaml`, so a catalog edit is visible to them.
-
-  Nothing about the daemon changes — this is a test-only addition. It exists
-  because there was nothing here that would have noticed a changed payload:
-  no `testdata/` anywhere in the tree, no golden file, and a guard consisting
-  of four asserted keys on a single sensor. Home Assistant drops an
-  undeclared discovery key silently (`extra=REMOVE_EXTRA`, no error, no log
-  line) and keys its entity registry on `unique_id` and its device registry
-  on `identifiers`, neither of which has a migration path, so a payload
-  regression here is invisible until entities are already orphaned.
-
-  Two pinned rows record defects rather than intended output, and the test's
-  doc comment names them: two battery packs whose serials differ only in
-  `-` versus `_` collapse onto one `default_entity_id` while keeping distinct
-  `unique_id`s, and a device name containing a non-German accent loses the
-  character instead of transliterating it. Both are pinned as published — a
-  defect that is pinned is one a later change can be seen to fix.
-
-### Changed
-
-- **Five CI gates added; every one green on `main` when it landed.** PR #40
-  made `golangci-lint` a gate and, in passing, enumerated the gates this
-  repo was missing. These are those, each in its own commit.
-
-  Two are not hygiene. **`make vuln` and `make licenses` existed in the
-  Makefile and ran in no job** — and this repo stages cross-compiled release
-  archives and ships a Docker image, so every dependency it links is
-  redistributed: `make licenses` forbidding GPL/AGPL/LGPL/MPL against an MIT
-  tree is a statement about a published artifact, and a known-vulnerable
-  dependency reaching a shipped binary had nothing reporting it. Both now
-  run in a `security` job. And **there was no `go mod tidy` / `go.sum`
-  verification gate**, which is immediately relevant rather than
-  theoretical: the ADR 0070 phase 5 migration ahead is a series of
-  `go-hamqtt` version bumps, and a bump is exactly what leaves go.mod drift.
-  The new `make tidy-check` found drift immediately: when this branch was
-  cut, `go.sum` still carried both hashes for `go-mqtt` v1.3.0 after the
-  bump to v1.4.0. That has since been cleared upstream by #41's own tidy, so
-  no dependency version moves here — the gate is what stops it recurring
-  across the bumps still to come.
-
-  Also added: **`gitleaks`** in git mode over the full history (a secret
-  committed once and reverted is still in the history and still a secret,
-  and this daemon handles a cloud app token plus MQTT credentials);
-  deliberately configless, because the default ruleset is clean over the whole
-  history and an allowlist added before anything tripped a rule would only
-  pre-exempt future findings. **A per-package coverage floor**
-  (`make cover-check`, `COVER_MIN=25`), per package rather than on a merged
-  total so one well-tested package cannot hide a package nothing executes,
-  with the eight packages below the floor pinned at their current numbers —
-  a ratchet, not an aspiration. Six of those eight have no test file at all. And **`make fuzz-smoke`** over three new
-  `./internal/process` targets, covering the parsing that turns
-  device-supplied strings into topic levels and `unique_id`s.
-
-  Every tool is pinned in the workflow *and* in `make setup`, so the local
-  and CI gates cannot drift: `govulncheck` v1.8.0, `go-licenses` v1.6.0,
-  `gitleaks` v8.30.1, alongside PR #40's `gofumpt` v0.12.0 and
-  `golangci-lint` v2.13.2.
-
-  Nothing about the daemon changes. The four pinned discovery payloads are
-  untouched, including the two rows that pin defects.
-
-  Reported and deliberately not fixed: nothing bounds the length of a
-  device-supplied property name. `validPackSN` caps a battery serial at 64
-  bytes, but `sanitizeSegment` passes a name of any length through, so a
-  property name longer than MQTT's 65535-byte topic limit produces exactly
-  the rejected PUBLISH that function exists to prevent. The fuzz target
-  documents the carve-out rather than asserting it, so the gate reports on
-  the parsing instead of re-reporting the known gap on every run.
-
-- **`golangci-lint` is now a CI gate, and the four findings it had been
-  reporting on `main` are fixed.** The `lint` job ran `go vet` plus
-  `gofumpt -l` only, so the `.golangci.yaml` in the repo was enforced
-  nowhere but on a developer's own machine — where it already failed:
-  `exhaustive` in `internal/config/load.go`, `nilerr` and `revive` in
-  `internal/zendure/cloud/source.go`, and `staticcheck` in
-  `internal/process/process.go`. A local gate that is already red is worse
-  than no gate, because the next person to run `make check` cannot tell
-  their own finding from the four that were already there.
-
-  Both lint tools are now pinned by version — `gofumpt v0.12.0` and
-  `golangci-lint v2.13.2` — in the workflow *and* in `make setup`, so a
-  local run reports what CI reports and an unrelated upstream release
-  cannot turn someone else's PR red. No published byte moves: the four
-  discovery and state-topic goldens are unchanged.
-
-### Fixed
-
-- **`coerceEnvValue`'s kind switch states its open set explicitly**
-  (`internal/config/load.go`). It handles bool, the signed ints and the
-  floats, and every other `reflect.Kind` keeps the raw string so `Validate`
-  can report it — which its doc comment already promised. An explicit
-  `default` says that; enumerating the 19 remaining kinds would have
-  claimed the opposite. No behaviour change.
-
-- **The cloud backend's nil return on a cancelled login retry is now
-  annotated, not silent** (`internal/zendure/cloud/source.go`).
-  `loginWithRetry` only ever returns `ctx.Err()`, so `Run` returning `nil`
-  there is a clean shutdown, consistent with every other `Run` in the
-  daemon; propagating the error would have made an ordinary SIGTERM exit
-  non-zero. The retry loop's `if`/`else-if`/`else` is also flattened, which
-  makes that single non-nil exit visible on the page.
-
-- **`sanitizeSegment` uses a tagged switch** (`internal/process/process.go`)
-  instead of five `||`-chained equality tests in one case. Pure form change
-  — same constants, same default — and the pinned goldens prove it, since
-  this function feeds published topic levels and `unique_id`s.
-
-### Changed
-
-- **go-mqtt v1.3.0 → v1.4.0, and the hand-rolled split client is gone.**
-  v1.4.0 is purely additive — it adds `SplitClient(Publisher, Subscriber)`
-  and `ConnectWithRetry`, and changes no behaviour — and `SplitClient` is
-  exactly the nine-line `mqttSession` struct this repo carried to put the
-  circuit breaker on the publish half while subscriptions went to the raw
-  client. `cmd/zendure2mqtt/main.go` now uses the shared helper. No wire
-  behaviour changes; the tests that pinned the split still pin it, now
-  against the library type.
-
-- **Dropped the dead `object_id` key from HA discovery payloads.** Home
-  Assistant's MQTT discovery schemas are `extra=REMOVE_EXTRA`; measured against
-  the schemas of HA 2026.9, `object_id` is accepted by 0 of 32 MQTT platforms
-  (`default_entity_id` by 28), so it was being silently dropped on arrival.
-  The payload already carried `default_entity_id` with the same seed at every
-  site, so this is a pure deletion with no user-visible effect: entity ids are
-  unchanged, retained configs just get smaller and stop advertising a key that
-  no longer does anything.
-
-# Version 0.7.0 (2026-08-16)
-
-## What's Changed
-
-Dependency update, no functional changes in this repo's own code.
-
-### Changed
-
-- **go-mqtt v1.2.0 → v1.3.0.** Picks up the upstream audit release (42
-  adversarially verified findings — 3 high, 7 medium, 32 low — across
-  concurrency, decoder robustness, resource limits, and spec
-  conformance). Exported API changes are purely additive; no code
-  changes were needed here to build against it.
-- **Reconnect flap damping is now the default.** The output broker's
-  `Lifecycle` (`cmd/zendure2mqtt/main.go`, built with just a `Logger`
-  set) picks up `LifecycleConfig.FlapWindow`'s new 10s default: if the
-  link dies within 10s of coming up, the reconnect now backs off
-  exponentially instead of redialling immediately, damping a flapping
-  broker instead of hammering it at full speed. A one-off drop still
-  reconnects promptly via the existing event-driven path. Left at the
-  library default — appropriate for this bridge, not set explicitly.
-- **Output circuit breaker no longer trips on client-side validation
-  errors.** `mqtt.Breaker` (wraps the output client in `main.go`) used
-  to count a rejected malformed publish (bad topic, oversized string,
-  ...) as a broker-side failure; that could open the circuit and mute
-  otherwise-healthy publishes. Complements the 0.6.0 hardening in this
-  repo that sanitizes device-supplied topic segments before they reach
-  MQTT.
-- **No more spurious reconnect after an intentional `Disconnect`.**
-  Benefits the cloud backend's own hand-rolled `connectLoop`
-  (`internal/zendure/cloud/source.go`), which calls `client.Disconnect`
-  itself on shutdown.
-
-Not applicable to this bridge: the QoS 2 unknown-identifier recovery
-fix and the new `$share/...` delivery support (every publish/subscribe
-here is QoS 0 and uses plain filters, no shared subscriptions), and the
-stricter inbound frame validation (transparent to callers).
-
-# Version 0.6.1 (2026-07-07)
-
-## What's Changed
-
-Dependency update, no functional changes in this repo.
-
-### Changed
-
-- **go-mqtt v1.1.0 → v1.2.0.** Picks up the upstream hardening release (28
-  adversarially verified fixes across concurrency, decoder robustness, resource
-  limits, and spec conformance). Most relevant here: concurrent
-  `Connect`/`Disconnect` calls are now fully serialised, which benefits the
-  cloud backend's reconnect loop. No API changes; no config changes required.
-
-# Version 0.6.0 (2026-07-07)
-
-## What's Changed
-
-Codebase hardening pass: a multi-agent review found and adversarially verified a
-set of robustness and untrusted-input defects, fixed here. No config changes are
-required, except that `CHARGE_ACTIVE_VALUE` / `DISCHARGE_ACTIVE_VALUE` now reject
-an explicit `0` (see below).
-
-### Security / robustness
-
-- **mDNS parser no longer hangs on a crafted packet.** The hand-written DNS
-  name-compression decoder (`zendure2mqtt-util discover`) followed backward
-  pointers with a guard that a self-referential pointer could defeat, spinning
-  the CPU and allocating without bound. Pointer indirections are now capped, so
-  a malicious LAN response yields a parse error instead of a hang.
-- **Device and cloud HTTP responses are size-capped.** `FetchReport` (local,
-  unauthenticated plain HTTP) and the cloud login response were read with an
-  unbounded `io.ReadAll`; a malfunctioning or hostile peer could stream
-  gigabytes and OOM the daemon. Both now read through a `LimitReader` (4 MiB /
-  1 MiB) and error on overflow.
-- **Diagnostic web server got read/write/idle timeouts.** Only
-  `ReadHeaderTimeout` was set, so an idle keep-alive or slow reader could pin a
-  connection indefinitely (fd exhaustion). `ReadTimeout`, `WriteTimeout` and
-  `IdleTimeout` are now set.
-- **Device-supplied topic segments are sanitized.** Unmapped property keys and
-  battery-pack serials flowed verbatim into MQTT topics; a key or serial with
-  `/`, `+` or `#` produced protocol-violating publishes that counted against the
-  output circuit breaker and could mute the whole bridge. Segments are now
-  neutralized and implausible pack serials dropped (which also bounds the
-  otherwise-unbounded set of discovery sub-devices a rogue device could mint).
-
-### Fixed
-
-- **Fatal map-race in cloud mode.** `bySN` was read by the command handler while
-  the telemetry goroutine wrote it, which the Go runtime turns into a fatal
-  `concurrent map read and map write`. It is now guarded by an `RWMutex`.
-- **Inbound writes no longer block the MQTT read loop.** A slow or unreachable
-  device could stall all inbound command dispatch (and trip the keep-alive
-  watchdog) because backend writes ran synchronously in the handler. Writes are
-  now performed off the read loop.
-- **`/set` command payloads are validated.** `NaN`, `Inf` and out-of-range
-  values were converted to garbage `int64` and written to the hardware,
-  bypassing the catalog's advertised min/max. Numeric commands are now clamped
-  to the catalog bounds and non-finite values rejected.
-- **Transient cloud-login failure now retries** with backoff instead of idling
-  the backend permanently until a manual restart.
-- **Failed startup `/set` subscription now retries** in the background; a drop
-  in the connect/subscribe window no longer silently disables all commands until
+- **Cloud mode:** after the cloud connection dropped, devices stayed
+  unavailable until they reported again. They are available again as soon
+  as the connection is back.
+- **Local mode:** a single missed poll no longer makes a device (or, with
+  one device, every entity) unavailable; it takes two in a row.
+- **AC mode / smart mode:** a value the add-on does not know now shows as
+  *unknown* instead of the last option — or *persist* for the smart mode —
+  and is logged once so it can be added.
+- **Cleared values** show as *unknown* instead of keeping their old state
+  with a template error in the Home Assistant log.
+- **Broker restarts without persistence:** the discovery documents are sent
+  again on every reconnect, so the entities survive Home Assistant's next
   restart.
-- **Orphan-reconcile no longer permanently deletes live entities.** A
-  transiently shrunken report could clear still-live discovery configs that were
-  then never republished; cleared configs are now forgotten from the sent-cache
-  so the next report restores them. Concurrent per-device reconciles are also
-  serialized so they no longer truncate each other's collection.
-- **Type-blind env coercion corrupted string credentials.** A numeric-looking
-  `ZENDURE_MQTT_PASSWORD`/`WEB_PASSWORD` (e.g. `0123456`, `1e5`) was silently
-  rewritten. Env values are now coerced per target field type.
-- **Catalog load rejects duplicate properties/topic leaves and unknown
-  platforms** instead of silently last-winning (which could misroute a write to
-  the wrong device property).
-- **`CHARGE_ACTIVE_VALUE` / `DISCHARGE_ACTIVE_VALUE` reject an explicit `0`.**
-  A `0` was silently rewritten to the 1200 W default (opposite of intent); the
-  valid range is now `1..2400` and omitting the key still takes the default.
 
-# Version 0.5.1 (2026-07-06)
+## 0.10.0
 
-## What's Changed
+- **Breaking (MQTT topics): the topics follow the mqtt-smarthome 2.0
+  convention.** `zendure2mqtt/<sn>/<group>/<key>/state` becomes
+  `<name>/status/<sn>/<group>/<key>`, `…/set` becomes `<name>/set/…` on the
+  same path, and `zendure2mqtt/bridge/status` becomes `<name>/connected`
+  (`0`/`1`/`2`). Every value is a JSON object `{"val", "ts", "lc"}`; the AC
+  and smart modes carry their English token instead of the localised label,
+  the switches `true`/`false` instead of `1`/`0`. See DOCS.md for the table.
+- **Home Assistant: nothing to do.** Entities move to the new topics by
+  themselves and keep their ids, names, areas and history. They now also go
+  unavailable when their device stops answering, not only when the add-on
+  stops.
+- **Raw-topic users** (Node-RED, dashboards, scripts) must move to the new
+  topics. The old retained topics are cleared on start.
+- **Option changes:** `mqtt_topic` may now be empty and is empty for new
+  installs (meaning `zendure`); an existing install keeps its saved
+  `zendure2mqtt`, so its topics read `zendure2mqtt/status/…`. New options
+  `mqtt_maintenance` (default on) and `mqtt_stats_interval` (default 60 s)
+  for the new maintenance topics; the restart command is refused in the
+  add-on.
+- `set` commands are now subscribed at QoS 1 and retained ones are ignored.
 
-### Fixed
+## 0.9.0
 
-- **Entity-id seed now published as both `object_id` and `default_entity_id`.**
-  Current Home Assistant releases do not yet honour `default_entity_id`
-  reliably (home-assistant/core#157241 — the seed is ignored and a generic
-  `entity_id` is generated instead), while the deprecated `object_id` still
-  works. The discovery payload now carries both — `object_id` for today's HA,
-  `default_entity_id` for future HA — so the configured `DEVICE_NAME` (0.5.0)
-  actually lands in the `entity_id`. Both carry the same English,
-  language-independent seed; only the display `name` is localized. Matches the
-  go-mtec2mqtt twin.
+- Built with Go 1.27.1. Nothing changes for you: no option, topic, entity or
+  discovery payload moves, and no action is needed on upgrade.
+- Dependency update: the MQTT client library (go-mqtt v1.6.0), the Home
+  Assistant catalog (go-ha-catalog v0.3.0) and the discovery library
+  (go-hamqtt v0.35.0) move to their Go 1.27 releases.
 
-# Version 0.5.0 (2026-07-06)
+## 0.8.0
 
-## What's Changed
+- **Breaking (discovery format): Home Assistant discovery is now one retained
+  *device document* per device instead of 29 per-entity configs.** The
+  add-on retracts the old configs on first start and then publishes one
+  document per unit and per battery pack. Nothing for you to do, and nothing
+  is lost: `unique_id` is unchanged, so every entity keeps its id, name,
+  area, icon, history and automations. **Home Assistant 2024.11 or newer is
+  required from this release on.**
+- **Rolling back to 0.7.x needs one manual step.** The retained device
+  documents stay on the broker and would make an older add-on's per-entity
+  configs be refused by Home Assistant — one
+  `WARNING [mqtt.entity] Received a conflicting MQTT discovery message` line
+  in its log and no entities. Clear each document first with
+  `mosquitto_pub -h <broker> -u <user> -P <password> -t <topic> -r -n`,
+  taking `<topic>` **verbatim from the add-on log's new
+  `hass.bundle_published` lines** rather than composing it: the prefix is
+  your `HASS_BASE_TOPIC` (default `homeassistant`, but an option), not a
+  fixed `homeassistant/`. See DOCS.md.
+- **Fixed: after an MQTT reconnect most entities could silently fail to
+  appear.** The retractions were remembered as done per process rather than
+  per connection, so a reconnect re-sent only 7 of 29 of them and published
+  the device documents anyway — leaving 22 of 29 entities missing until the
+  add-on was restarted. Fixed; no option changes.
+- New `hass.bundle_published` log line, one per retained device document, so
+  the exact topic can be copied rather than composed.
 
-### Added
+## 0.7.0
 
-- **Optional friendly device name.** Each `LOCAL_DEVICES` entry now takes an
-  optional `DEVICE_NAME` (add-on option `device_name`). When set it replaces
-  the serial number in the Home Assistant device name and seeds the
-  language-independent `entity_id`s — entities read `<DEVICE_NAME> …`
-  (e.g. `sensor.balkon_speicher_electric_level`) instead of
-  `Zendure <SN> …`. Battery sub-devices inherit it (`<DEVICE_NAME> Pack <sn>`).
-  MQTT topics, the retained discovery config topics and the `unique_id`s all
-  stay keyed on the serial number — the name is purely cosmetic and needs **no
-  migration**. Note: Home Assistant does not rename already-registered
-  `entity_id`s — setting `DEVICE_NAME` on a device that is already onboarded
-  updates the device name but needs a discovery reset (or a manual rename) to
-  move existing entity_ids.
+- Dependency update: MQTT client library bumped to v1.3.0 (upstream audit
+  release — 42 fixes across concurrency, decoder robustness, and spec
+  conformance). The output broker's reconnect now waits briefly before
+  retrying if the connection drops right after connecting, instead of
+  hammering the broker immediately. No add-on option changes; no action
+  required.
 
-# Version 0.4.0 (2026-07-04)
+## 0.6.1
 
-## What's Changed
+- Dependency update: MQTT client library bumped to v1.2.0 (upstream hardening
+  release — more robust reconnect handling, stricter protocol parsing). No
+  add-on option changes; no action required.
 
-### Changed
+## 0.6.0
 
-- **MQTT publishes are circuit-protected.** Upgraded to `go-mqtt` v1.1.0
-  and adopted its new `Breaker` decorator on the output-broker publish
-  path (coordinator state/availability/discovery-clear publishes and the
-  Home Assistant discovery configs): during a degraded-broker phase (TCP
-  link up, acknowledgements missing) publishes fail fast with
-  `ErrCircuitOpen` instead of each stalling on the full ack timeout.
-  After 5 consecutive broker-side failures the circuit opens; after 30
-  seconds a single half-open probe tests recovery, and one success
-  closes the circuit again. Local conditions (caller cancellation,
-  oversized packets) never trip it. Every state transition is logged as
-  a `zendure2mqtt.mqtt_breaker_state` warning. Subscriptions are
-  deliberately not gated — they carry their own SUBACK-bounded wait and
-  must keep working while the publish side is browned out. The Zendure
-  cloud link is untouched — the breaker guards the output broker only.
-  The lifecycle's reconnect loop remains in charge of the link itself.
+- Codebase hardening pass covering untrusted-input parsing, HTTP client/server
+  robustness, and concurrency. Highlights: the mDNS discovery parser can no
+  longer be hung by a crafted LAN packet; device/cloud HTTP responses are now
+  size-capped so a misbehaving peer cannot exhaust memory; the diagnostic web
+  UI gained read/write/idle connection timeouts; a fatal map-race in cloud mode
+  is fixed; inbound `/set` writes no longer block the MQTT read loop; and `/set`
+  numeric commands are clamped to their advertised min/max (`NaN`/`Inf` and
+  out-of-range values are rejected instead of reaching the hardware).
+- Transient cloud-login and startup-subscription failures now retry instead of
+  leaving the add-on running but idle until a manual restart.
+- Home Assistant discovery no longer permanently deletes live entities when a
+  device sends a transiently incomplete report.
+- **Breaking (config):** `charge_active_value` / `discharge_active_value` no
+  longer accept `0` (a `0` W limit was a silent no-op that got rewritten to the
+  1200 W default). The valid range is now `1..2400`; leave the option unset for
+  the 1200 W default.
 
-# Version 0.3.0 (2026-07-04)
+## 0.4.0
 
-## What's Changed
+- MQTT publishes to the output broker are now circuit-protected: when the
+  broker stops acknowledging (link up, acks missing), publishes fail fast and
+  a periodic probe tests recovery instead of every publish stalling on the
+  ack timeout. State transitions appear as `zendure2mqtt.mqtt_breaker_state`
+  warnings in the add-on log. Command subscriptions are unaffected.
 
-Adopts [`github.com/SukramJ/go-mqtt`](https://github.com/SukramJ/go-mqtt) v1.0.0.
-**MQTT 5.0 is now the wire default** for the output broker link (3.1.1 is still
-selectable via `ProtocolVersion`); reconnects are event-driven off the client's
-`ConnectionLost()` channel for tighter recovery; and the underlying client now
-supports full QoS 0/1/2 (this bridge itself still only ever publishes/subscribes
-at QoS 0).
+## 0.1.4
 
-### Changed
+- MQTT half-open connections are now detected and recovered. A broker or network
+  drop without a TCP FIN/RST (e.g. a Mosquitto or Home Assistant restart) used to
+  leave the read loop blocked in `ReadFrame` forever with no reconnect, and
+  publishes timed out with `context deadline exceeded` until a manual restart. A
+  PINGRESP watchdog now declares the connection lost when a keep-alive ping goes
+  unanswered, so the existing reconnect logic re-dials automatically.
 
-- Every `Subscribe` call (output-broker command subscription, the HA-discovery
-  orphan-reconcile subscribe, and the cloud backend's per-device subscribes) now
-  blocks until the broker's SUBACK and returns a hard error on a rejected filter,
-  instead of the subscription silently going live with only a broker-side log
-  line to notice a reject.
-- `Publish` now fails fast when the underlying connection is down, rather than
-  blocking until a dial/write timeout.
-- `MessageHandler` is now `func(*mqtt.Message)` (was
-  `func(topic string, payload []byte, retained bool)`); the coordinator's
-  `handleSet`, the discovery orphan-reconcile handler, and the cloud backend's
-  `handleMessage` were migrated to `msg.Topic`/`msg.Payload` natively.
-- Output broker LWT is now configured via `Will: &mqtt.Will{Topic, Payload,
-  Retain}` (was `WillTopic`/`WillPayload`/`WillRetain`); `CleanSession` was
-  renamed to `CleanStart` (MQTT 5.0 terminology) — both apply to the output
-  broker only, with no config-file or env-var change for this bridge's users.
-- The Zendure cloud link (`internal/zendure/cloud/source.go`) is pinned to
-  `ProtocolVersion: mqtt.ProtocolV311`: the third-party `mqtteu.zen-iot.com`
-  broker's MQTT 5.0 support is unverified, so the cloud connection stays on
-  3.1.1 while the local output broker uses the new v5 default.
+## 0.1.3
 
-# Version 0.2.1 (2026-07-03)
+- Home Assistant discovery orphan cleanup: entities a newer release no longer
+  publishes are cleared from the broker instead of lingering as "unavailable".
+  Other integrations' and other devices' configs are never touched.
 
-## What's Changed
+## 0.1.2
 
-Adopts [`github.com/SukramJ/go-mqtt`](https://github.com/SukramJ/go-mqtt) v0.2.0:
-retained MessageHandler flag, per-filter QoS replay on reconnect, and a
-hardened ping watchdog (no more spurious ping_timeout reconnects).
+- Internal code-quality cleanup only (linter findings). No functional changes to
+  the add-on.
 
-# Version 0.2.0 (2026-07-02)
+## 0.1.1
 
-## What's Changed
+- Add an add-on icon (the Zendure brand logo, sourced from `home-assistant/brands`)
+  shown in the add-on store and the sidebar.
+- CI supply-chain hardening and dependency bumps. No functional changes to the
+  add-on itself.
 
-Replaces the per-repo `internal/mqtt` copy with the shared
-[`github.com/SukramJ/go-mqtt`](https://github.com/SukramJ/go-mqtt) module
-(v0.1.0), so MQTT transport fixes land once and are picked up via `go get -u`
-instead of drifting across the four `go-*2mqtt` bridges.
+## 0.1.0
 
-### Changed
-
-- MQTT client switched from the local `internal/mqtt` package to the shared
-  `github.com/SukramJ/go-mqtt` module (v0.1.0) — a superset of the four
-  previously-duplicated `internal/mqtt` copies. No behavioral change to the
-  cloud backend's event-driven reconnect, which keeps using
-  `TCPClient.ConnectionLost()`.
-
-### Security / Fixed (inherited from the shared module)
-
-- MQTT frame-size cap: the wire codec now rejects an oversized `remaining
-  length` before allocating a body buffer, closing an OOM/DoS vector against
-  a malicious or malfunctioning broker.
-- Broker-rejected subscriptions are now logged: SUBACK return codes are
-  parsed and surfaced instead of being silently ignored.
-
-# Version 0.1.4 (2026-07-02)
-
-## What's Changed
-
-Fixes MQTT half-open connection detection so a broker or network drop without a
-TCP FIN/RST no longer wedges the daemon until a manual restart.
-
-### Fixed
-
-- MQTT half-open connections are now detected and recovered. The keep-alive loop
-  sent PINGREQ but never checked that the matching PINGRESP came back, and the
-  read loop runs without a read deadline — so a broker/network drop without a TCP
-  FIN/RST (e.g. a Mosquitto or Home Assistant restart) left the read loop blocked
-  in `ReadFrame` forever: the socket was never torn down, no reconnect happened,
-  and QoS-1 publishes timed out with `context deadline exceeded` on the dead
-  socket until a manual restart. A PINGRESP watchdog now declares the connection
-  lost when a keep-alive ping goes unanswered, so the existing reconnect logic
-  re-dials automatically (within one keep-alive interval).
-
-# Version 0.1.3 (2026-06-27)
-
-## What's Changed
-
-Adds Home Assistant MQTT discovery orphan cleanup, so entities that a newer
-release no longer publishes (a property removed, renamed or re-platformed in the
-catalog) stop lingering as permanently "unavailable" entities in Home Assistant.
-
-### Added
-
-- Discovery orphan reconciliation. After publishing a device's discovery configs
-  the coordinator collects the broker's retained configs under the discovery
-  prefix and clears (empty retained payload) any that are ours but no longer in
-  the published set. Ownership is guarded by the `zendure_` unique_id namespace
-  and the bridge's state-topic root, and scoping is per device (by the
-  `zendure_<sn>_` unique_id prefix), so configs from other integrations or other
-  Zendure devices are never touched. The reconcile is asynchronous, gated per
-  device, and only runs when a device's entity set actually changes.
-
-# Version 0.1.2 (2026-06-27)
-
-## What's Changed
-
-Maintenance release. Internal code-quality cleanup only — no functional or
-user-facing changes.
-
-### Changed
-
-- Resolved all 20 `golangci-lint` findings (`httpNoBody`, `rangeValCopy`,
-  `unnamedResult`, revive naming, `contextcheck`, gosec G115, `makezero`,
-  staticcheck) so `make check` passes the full linter gate. No behavior change.
-
-# Version 0.1.1 (2026-06-27)
-
-## What's Changed
-
-Maintenance release. No functional changes to the daemon; adds the Home Assistant
-add-on icon and tightens the CI supply chain.
-
-### Added
-
-- Home Assistant add-on icon (`addon/icon.png`) — the Zendure brand logo, sourced
-  from the `home-assistant/brands` repository. Attributed in the README as a
-  Zendure trademark, not covered by this project's MIT license.
-
-### Changed
-
-- CI supply-chain hardening, Dependabot auto-merge (patch/minor) with a 7-day
-  cooldown, and dependency bumps (`actions/setup-go`, `dependabot/fetch-metadata`).
-- Documentation updates and upstream attribution for the Zendure zenSDK and the
-  `Zendure/zendure-ha` integration.
-
-### Dependencies
-
-- Go modules already at their latest releases (`golang.org/x/sync` v0.21.0,
-  `gopkg.in/yaml.v3` v3.0.1) — no changes required.
-
-# Version 0.1.0 (2026-06-19)
-
-## What's Changed
-
-First release. A pure-Go bridge connecting Zendure devices (e.g. the SolarFlow
-2400 AC) to MQTT with Home Assistant auto-discovery — locally over the device's
-on-board HTTP API (zenSDK) or via the Zendure cloud. Verified end-to-end against
-a real SolarFlow 2400 AC. Project setup adopted from `go-daikin2mqtt`.
-
-### Added
-
-- Project skeleton: `cmd/zendure2mqtt` (daemon) + `cmd/zendure2mqtt-util` (CLI),
-  Makefile, Dockerfile (distroless), `.golangci.yaml`, GitHub Actions.
-- Pure-Go MQTT client (`internal/mqtt`, TLS-capable) with a reconnecting lifecycle.
-- Transport-neutral data model (`internal/zendure/model`) and `Source`/`Controller`
-  seam (`internal/source`): the local and cloud backends share one pipeline.
-- Local HTTP backend (`internal/zendure/local`): polls `GET /properties/report`
-  and writes via `POST /properties/write`, with an immediate re-read after a write
-  (`reReadSoon`) so Home Assistant reflects changes sub-second.
-- Cloud backend (`internal/zendure/cloud`): app-token decode + signed
-  `/api/ha/deviceList` login, then a TLS MQTT stream to the Zendure cloud broker —
-  subscribes telemetry and publishes control. `CLOUD_TLS_VERIFY` (default false)
-  toggles strict certificate verification (the Zendure cloud cert is non-standard;
-  the connection stays TLS-encrypted). Event-driven, stability-aware reconnect
-  (new `TCPClient.ConnectionLost()` signal): occasional drops recover in ~1 s,
-  flapping is throttled 1→2→…→30 s.
-- Declarative property catalog (`zendure.yaml`) for the SolarFlow 2400 AC, with
-  offset/scale, English/German value maps and per-pack battery values.
-- Coordinator: publishes resolved state, routes `…/set` commands to writes, and
-  drives Home Assistant discovery (`internal/hass`) — `default_entity_id`
-  (English, language-independent) instead of the removed `object_id`, localized
-  display names, an `availability_topic` bound to `bridge/status`, battery packs
-  as their own sub-devices (`via_device`), and rich device-registry info
-  (`serial_number`, `model_id`, `sw_version`, `configuration_url`).
-- Virtual charge/discharge switches (`internal/virtual`): synthetic HA switches
-  that write a property set (`acMode` + power limit + `smartMode`) on toggle and
-  derive their state from the report; limits via `CHARGE_ACTIVE_VALUE` /
-  `DISCHARGE_ACTIVE_VALUE`.
-- Read-only diagnostic web UI (`internal/web` + `internal/state`): an embedded
-  single-page app (no build step) over `/api/health` + `/api/snapshot`, optional
-  HTTP basic auth, served on `WEB_BIND`.
-- Dependency-free mDNS browser (`internal/discovery`) plus `zendure2mqtt-util`
-  subcommands: `discover`, `report`, `resolve`, `set`, `cloud-login`,
-  `catalog-check`.
-- Home Assistant add-on (`addon/` + root `repository.yaml`): a Zendure options
-  schema, `build.yaml`, a multi-stage Dockerfile, and `script/run.sh` mapping
-  options onto `ZENDURE_*` env + a generated `LOCAL_DEVICES` config. Multi-arch
-  images via `addon-image.yml`.
-- Config loader with `ZENDURE_*` env overrides + validation; unit tests for
-  config, process (scaling / value maps / packData), cloud token handling, mDNS
-  parsing, and the web handlers.
-
-### Verified against hardware
-
-- Live local state publish (79 points) with correct scaling — `socSet`/`minSoc`
-  are deci-percent (raw 950 → 95 %), the read scale inverted on writes.
-- HA auto-discovery: 34 entities across 3 devices (main unit + 2 battery packs),
-  English entity_ids, German display names, localized select options. Graceful
-  shutdown publishes `bridge/status=offline`.
-- Cloud: TLS connect to `mqtteu.zen-iot.com:8883` (MQTT 3.1.1), subscribe, live
-  telemetry republished. The cloud enforces a single session and drops this
-  clientId every ~1 s, so cloud mode trickles telemetry — **local mode is the
-  recommended path for this device.**
-
-### Known limitations
-
-- This SolarFlow 2400 AC does not advertise `_zendure._tcp` over mDNS, so local
-  mode uses static `LOCAL_DEVICES` IPs; the browser is provided for models that
-  do advertise.
-- Home Assistant does not move already-registered entities to a new device nor
-  rename entity_ids, so a discovery-schema change needs a one-time reset (clear
-  the retained `homeassistant/.../config` topics, then republish).
-- Roadmap: wire mDNS auto-discovery into the local backend; web-UI live push
-  (SSE) and write access.
+- Initial release. Run the go-zendure2mqtt bridge as a Home Assistant add-on:
+  bridges Zendure devices (e.g. the SolarFlow 2400 AC) to MQTT with Home
+  Assistant auto-discovery — locally over the device's on-board HTTP API (zenSDK)
+  or via the Zendure cloud — with an optional read-only diagnostic Web UI.
