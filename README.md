@@ -58,9 +58,9 @@ cp config-template.yaml config.yaml
 ./bin/zendure2mqtt --config ./config.yaml
 ```
 
-Or install the **Home Assistant add-on**: Settings → Add-ons → Add-on Store →
-⋮ → Repositories → add `https://github.com/SukramJ/go-zendure2mqtt`, then install
-**go-zendure2mqtt**. See [addon/DOCS.md](addon/DOCS.md).
+Or install the **Home Assistant add-on**: Settings → Apps → Install app →
+⋮ → Repositories → add `https://github.com/SukramJ/go-zendure2mqtt` (formerly
+Settings → Add-ons → Add-on Store), then install **go-zendure2mqtt**. See [addon/DOCS.md](addon/DOCS.md).
 
 ## Transports
 

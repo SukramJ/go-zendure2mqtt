@@ -190,3 +190,5 @@ jobs:
         run: make build
       - name: version banner
         run: ./bin/zendure2mqtt --version
+      - name: version check (internal/version, addon/config.yaml, changelog.md)
+        run: make version-check

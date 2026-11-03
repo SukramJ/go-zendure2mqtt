@@ -8,7 +8,8 @@ diagnostic web UI.
 
 ## Installation
 
-1. In Home Assistant go to **Settings → Add-ons → Add-on Store**.
+1. In Home Assistant go to **Settings → Apps → Install app** (formerly
+   *Settings → Add-ons → Add-on Store*).
 2. Click the **⋮** menu (top right) → **Repositories** and add:
    `https://github.com/SukramJ/go-zendure2mqtt`
 3. The **go-zendure2mqtt** add-on now appears in the store. Open it and click
