@@ -10,8 +10,8 @@
   and its rollout table, row *"5 | `go-zendure2mqtt` (375 LOC) as pilot |
   Smallest surface, catalog-driven, single device hierarchy"*
 - Measured against: this repository at `origin/main`
-  (`d7b9d4a`), `sukramj.dev/go-hamqtt` v0.26.0,
-  `sukramj.dev/go-mqtt` v1.4.0, `sukramj.dev/go-ha-catalog`
+  (`d7b9d4a`), `github.com/SukramJ/go-hamqtt` v0.26.0,
+  `github.com/SukramJ/go-mqtt` v1.4.0, `github.com/SukramJ/go-ha-catalog`
   v0.2.1
 
 This document measures what phase 5 costs, before any code moves. It is the
@@ -137,7 +137,7 @@ Today it consumes the shared transport, one minor behind:
 
 ```
 // go.mod (origin/main)
-require sukramj.dev/go-mqtt v1.3.0    // latest tag: v1.4.0
+require github.com/SukramJ/go-mqtt v1.3.0    // latest tag: v1.4.0
 require golang.org/x/sync v0.23.0
 require gopkg.in/yaml.v3 v3.0.1
 ```
@@ -987,8 +987,8 @@ fix.
   first, then the byte-equality proof that published nothing, then the state
   plane, birth, LWT and sweep, then the device document with its retractions,
   then the reconnect fix the review of those found.
-- Measured against, at close: `sukramj.dev/go-hamqtt` v0.34.0,
-  `sukramj.dev/go-mqtt` v1.4.0.
+- Measured against, at close: `github.com/SukramJ/go-hamqtt` v0.34.0,
+  `github.com/SukramJ/go-mqtt` v1.4.0.
 
 Everything above this line is the 2026-09-12 snapshot and stays that way. What
 follows is every place the programme has since learned something the snapshot
