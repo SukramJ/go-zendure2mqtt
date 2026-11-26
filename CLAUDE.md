@@ -305,7 +305,7 @@ A tiny dependency-free mDNS browser (PTR/SRV/A/TXT parse with name compression) 
 `_zendure._tcp`. Exposed via `zendure2mqtt-util discover`. Not yet wired into the local
 backend as auto-discovery (and this SolarFlow does not advertise mDNS anyway).
 
-### MQTT (`github.com/SukramJ/go-mqtt`, `github.com/SukramJ/go-mqtt/protocol`)
+### MQTT (`sukramj.dev/go-mqtt`, `sukramj.dev/go-mqtt/protocol`)
 Custom pure-Go MQTT client (no third-party lib), TLS-capable, with a reconnecting `Lifecycle`
 (used for the output broker). Since go-mqtt v1.0.0 the wire default is **MQTT 5.0**; the
 output/local broker link uses that default, while the Zendure cloud link
@@ -354,7 +354,7 @@ Plain table/assert tests with hermetic inputs (no broker/device needed): `config
 override + validation), `process` (scaling / value maps / packData + topic scheme), `virtual`
 (state derivation + write props), `cloud` (token decode + sign), `discovery` (mDNS parse incl.
 compression), `web` (handlers + basic auth). MQTT-client tests live in the shared
-`github.com/SukramJ/go-mqtt` module, not in this repo. Run with `-race` (`make test`).
+`sukramj.dev/go-mqtt` module, not in this repo. Run with `-race` (`make test`).
 
 ## Release
 

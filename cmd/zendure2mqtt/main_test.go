@@ -8,8 +8,8 @@ import (
 	"errors"
 	"testing"
 
-	hagomqtt "github.com/SukramJ/go-hamqtt/publisher/gomqtt"
-	"github.com/SukramJ/go-mqtt"
+	hagomqtt "sukramj.dev/go-hamqtt/publisher/gomqtt"
+	"sukramj.dev/go-mqtt"
 )
 
 // failingPublisher always reports a broker-side failure so the breaker

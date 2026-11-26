@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SukramJ/go-mqtt/protocol"
+	"sukramj.dev/go-mqtt/protocol"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/config"
 	"github.com/SukramJ/go-zendure2mqtt/internal/harender"

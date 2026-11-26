@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SukramJ/go-hamqtt/publisher"
+	"sukramj.dev/go-hamqtt/publisher"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/evcc"
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
