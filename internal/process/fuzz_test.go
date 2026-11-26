@@ -8,9 +8,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/SukramJ/go-hamqtt/topic"
+	"sukramj.dev/go-hamqtt/topic"
 
-	"github.com/SukramJ/go-mqtt/protocol"
+	"sukramj.dev/go-mqtt/protocol"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/zendure/model"

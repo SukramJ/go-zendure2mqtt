@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/SukramJ/go-mqtt"
+	"sukramj.dev/go-mqtt"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/source"
 )

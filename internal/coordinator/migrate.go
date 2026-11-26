@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/SukramJ/go-hamqtt/topic"
+	"sukramj.dev/go-hamqtt/topic"
 )
 
 // The retained sweep of openccu-loom ADR 0083 ("Migration"): 0.10.0 moved

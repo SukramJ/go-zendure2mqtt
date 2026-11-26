@@ -52,10 +52,10 @@ package harender
 import (
 	"strings"
 
-	hacatalog "github.com/SukramJ/go-ha-catalog"
-	"github.com/SukramJ/go-hamqtt/discovery"
-	hamodel "github.com/SukramJ/go-hamqtt/model"
-	"github.com/SukramJ/go-hamqtt/topic"
+	hacatalog "sukramj.dev/go-ha-catalog"
+	"sukramj.dev/go-hamqtt/discovery"
+	hamodel "sukramj.dev/go-hamqtt/model"
+	"sukramj.dev/go-hamqtt/topic"
 
 	"github.com/SukramJ/go-zendure2mqtt/internal/catalog"
 	"github.com/SukramJ/go-zendure2mqtt/internal/evcc"
